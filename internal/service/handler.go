@@ -23,13 +23,15 @@ type handler struct {
 	projectsDir string
 	listenHost  string
 	logLevel    slog.Level
+	bindMounts  bool
 }
 
-func newHandler(projectsDir, listenHost string, logLevel slog.Level) *handler {
+func newHandler(projectsDir, listenHost string, logLevel slog.Level, bindMounts bool) *handler {
 	return &handler{
 		projectsDir: projectsDir,
 		listenHost:  listenHost,
 		logLevel:    logLevel,
+		bindMounts:  bindMounts,
 	}
 }
 
@@ -65,7 +67,7 @@ func (h *handler) Up(req *orev1.UpRequest, stream grpc.ServerStreamingServer[ore
 	if err != nil {
 		return err
 	}
-	eng := engine.NewLocal(newStreamLogger(wrapStream[orev1.UpResponse](stream), h.logLevel), sp)
+	eng := engine.NewLocal(newStreamLogger(wrapStream[orev1.UpResponse](stream), h.logLevel), sp, engine.WithBindMounts(h.bindMounts))
 	return eng.Up(stream.Context(), req.GetNoCache())
 }
 
@@ -74,7 +76,7 @@ func (h *handler) Down(_ *orev1.DownRequest, stream grpc.ServerStreamingServer[o
 	if err != nil {
 		return err
 	}
-	eng := engine.NewLocal(newStreamLogger(wrapStream[orev1.DownResponse](stream), h.logLevel), sp)
+	eng := engine.NewLocal(newStreamLogger(wrapStream[orev1.DownResponse](stream), h.logLevel), sp, engine.WithBindMounts(h.bindMounts))
 	return eng.Down(stream.Context())
 }
 
@@ -83,7 +85,7 @@ func (h *handler) Build(req *orev1.BuildRequest, stream grpc.ServerStreamingServ
 	if err != nil {
 		return err
 	}
-	eng := engine.NewLocal(newStreamLogger(wrapStream[orev1.BuildResponse](stream), h.logLevel), sp)
+	eng := engine.NewLocal(newStreamLogger(wrapStream[orev1.BuildResponse](stream), h.logLevel), sp, engine.WithBindMounts(h.bindMounts))
 	return eng.Build(stream.Context(), req.GetNoCache())
 }
 
@@ -92,7 +94,7 @@ func (h *handler) Status(ctx context.Context, _ *orev1.StatusRequest) (*orev1.St
 	if err != nil {
 		return nil, err
 	}
-	eng := engine.NewLocal(slog.Default(), sp)
+	eng := engine.NewLocal(slog.Default(), sp, engine.WithBindMounts(h.bindMounts))
 	s, err := eng.Status(ctx)
 	if err != nil {
 		return nil, err
@@ -109,7 +111,7 @@ func (h *handler) Prune(req *orev1.PruneRequest, stream grpc.ServerStreamingServ
 	if err != nil {
 		return err
 	}
-	eng := engine.NewLocal(newStreamLogger(wrapStream[orev1.PruneResponse](stream), h.logLevel), sp)
+	eng := engine.NewLocal(newStreamLogger(wrapStream[orev1.PruneResponse](stream), h.logLevel), sp, engine.WithBindMounts(h.bindMounts))
 	return eng.Prune(stream.Context(), target)
 }
 
@@ -122,7 +124,7 @@ func (h *handler) Clean(req *orev1.CleanRequest, stream grpc.ServerStreamingServ
 	if err != nil {
 		return err
 	}
-	eng := engine.NewLocal(newStreamLogger(wrapStream[orev1.CleanResponse](stream), h.logLevel), sp)
+	eng := engine.NewLocal(newStreamLogger(wrapStream[orev1.CleanResponse](stream), h.logLevel), sp, engine.WithBindMounts(h.bindMounts))
 	return eng.Clean(stream.Context(), target)
 }
 

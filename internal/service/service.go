@@ -55,7 +55,7 @@ func Run(_ []string, info BuildInfo) int {
 	}
 
 	srv := grpc.NewServer(opts...)
-	orev1.RegisterOreServiceServer(srv, newHandler(cfg.ProjectsDir, host, level))
+	orev1.RegisterOreServiceServer(srv, newHandler(cfg.ProjectsDir, host, level, cfg.BindMounts))
 
 	lis, err := net.Listen("tcp", cfg.Addr)
 	if err != nil {

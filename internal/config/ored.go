@@ -15,6 +15,7 @@ func LoadOred() (*OredConfig, error) {
 	v.SetDefault("addr", ":9090")
 	v.SetDefault("log_level", "info")
 	v.SetDefault("projects_dir", ".")
+	v.SetDefault("bind_mounts", false)
 	v.SetDefault("auth.token", "")
 
 	v.SetEnvPrefix("ORED")

@@ -17,16 +17,18 @@ import (
 )
 
 type Orchestrator struct {
-	docker  docker.Client
-	logger  *slog.Logger
-	workDir *cache.Manager
+	docker     docker.Client
+	logger     *slog.Logger
+	workDir    *cache.Manager
+	bindMounts bool
 }
 
-func New(dockerClient docker.Client, logger *slog.Logger, workDir *cache.Manager) *Orchestrator {
+func New(dockerClient docker.Client, logger *slog.Logger, workDir *cache.Manager, bindMounts bool) *Orchestrator {
 	return &Orchestrator{
-		docker:  dockerClient,
-		logger:  logger,
-		workDir: workDir,
+		docker:     dockerClient,
+		logger:     logger,
+		workDir:    workDir,
+		bindMounts: bindMounts,
 	}
 }
 
@@ -86,7 +88,7 @@ func (o *Orchestrator) Up(ctx context.Context, cfg *spec.NetworkSpec, images map
 }
 
 func (o *Orchestrator) resolveDataBind(imageTag, serverName string) string {
-	if o.workDir == nil || imageTag == "" {
+	if !o.bindMounts || o.workDir == nil || imageTag == "" {
 		return ""
 	}
 

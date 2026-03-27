@@ -18,17 +18,29 @@ import (
 )
 
 type Local struct {
-	specPath string
-	logger   *slog.Logger
-	registry *providers.Registry
+	specPath   string
+	logger     *slog.Logger
+	registry   *providers.Registry
+	bindMounts bool
 }
 
-func NewLocal(logger *slog.Logger, specPath string) *Local {
-	return &Local{
-		specPath: specPath,
-		logger:   logger,
-		registry: providers.NewDefault(),
+type LocalOption func(*Local)
+
+func WithBindMounts(enabled bool) LocalOption {
+	return func(l *Local) { l.bindMounts = enabled }
+}
+
+func NewLocal(logger *slog.Logger, specPath string, opts ...LocalOption) *Local {
+	l := &Local{
+		specPath:   specPath,
+		logger:     logger,
+		registry:   providers.NewDefault(),
+		bindMounts: true,
 	}
+	for _, opt := range opts {
+		opt(l)
+	}
+	return l
 }
 
 func (l *Local) Up(ctx context.Context, noCache bool) error {
@@ -38,7 +50,7 @@ func (l *Local) Up(ctx context.Context, noCache bool) error {
 	}
 	defer func() { _ = br.docker.Close() }()
 
-	orch := orchestrator.New(br.docker, l.logger, br.cache)
+	orch := orchestrator.New(br.docker, l.logger, br.cache, l.bindMounts)
 	return orch.Up(ctx, br.spec, br.images)
 }
 
@@ -54,7 +66,7 @@ func (l *Local) Down(ctx context.Context) error {
 	}
 	defer func() { _ = dockerClient.Close() }()
 
-	orch := orchestrator.New(dockerClient, l.logger, nil)
+	orch := orchestrator.New(dockerClient, l.logger, nil, l.bindMounts)
 	return orch.Down(ctx, s)
 }
 
@@ -79,7 +91,7 @@ func (l *Local) Status(ctx context.Context) (*orchestrator.NetworkStatus, error)
 	}
 	defer func() { _ = dockerClient.Close() }()
 
-	orch := orchestrator.New(dockerClient, l.logger, nil)
+	orch := orchestrator.New(dockerClient, l.logger, nil, l.bindMounts)
 	return orch.Status(ctx, s)
 }
 
@@ -95,7 +107,7 @@ func (l *Local) Prune(ctx context.Context, target PruneTarget) error {
 	}
 	defer func() { _ = dockerClient.Close() }()
 
-	orch := orchestrator.New(dockerClient, l.logger, nil)
+	orch := orchestrator.New(dockerClient, l.logger, nil, l.bindMounts)
 
 	switch target {
 	case PruneAll:

@@ -169,16 +169,18 @@ File: `~/.config/ored/config.yaml`
 addr: ":9090"
 log_level: "info"
 projects_dir: "/opt/ore/projects"
+bind_mounts: false
 auth:
   token: "my-secret-token"
 ```
 
-| Key            | Env                 | Default | Description                                  |
-|----------------|---------------------|---------|----------------------------------------------|
-| `addr`         | `ORED_ADDR`         | `:9090` | Listen address                               |
-| `log_level`    | `ORED_LOG_LEVEL`    | `info`  | Log level (`debug`, `info`, `warn`, `error`) |
-| `projects_dir` | `ORED_PROJECTS_DIR` | `.`     | Directory containing project subdirectories  |
-| `auth.token`   | `ORED_AUTH_TOKEN`   |         | Required token for client auth               |
+| Key            | Env                 | Default | Description                                            |
+|----------------|---------------------|---------|--------------------------------------------------------|
+| `addr`         | `ORED_ADDR`         | `:9090` | Listen address                                         |
+| `log_level`    | `ORED_LOG_LEVEL`    | `info`  | Log level (`debug`, `info`, `warn`, `error`)           |
+| `projects_dir` | `ORED_PROJECTS_DIR` | `.`     | Directory containing project subdirectories            |
+| `bind_mounts`  | `ORED_BIND_MOUNTS`  | `false` | Bind-mount server data dirs from cache into containers |
+| `auth.token`   | `ORED_AUTH_TOKEN`   |         | Required token for client auth                         |
 
 ### Authentication
 
