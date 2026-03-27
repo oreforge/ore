@@ -11,7 +11,7 @@ func newConsoleCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			replica, _ := cmd.Flags().GetInt("replica")
-			return eng.Console(cmd.Context(), configFile, args[0], replica)
+			return eng.Console(cmd.Context(), args[0], replica)
 		},
 	}
 

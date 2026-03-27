@@ -2,11 +2,14 @@ package config
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/adrg/xdg"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
 )
 
 func LoadOre(flags *pflag.FlagSet) (*OreConfig, error) {
@@ -15,6 +18,9 @@ func LoadOre(flags *pflag.FlagSet) (*OreConfig, error) {
 	v.SetDefault("file", "ore.yaml")
 	v.SetDefault("log_level", "info")
 	v.SetDefault("verbose", false)
+	v.SetDefault("remote.addr", "")
+	v.SetDefault("remote.project", "")
+	v.SetDefault("remote.auth.token", "")
 
 	v.SetEnvPrefix("ORE")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
@@ -46,4 +52,31 @@ func LoadOre(flags *pflag.FlagSet) (*OreConfig, error) {
 	}
 
 	return cfg, nil
+}
+
+func SaveProject(project string) error {
+	configPath := filepath.Join(OreConfigDir(), "config.yaml")
+
+	existing := make(map[string]any)
+	data, err := os.ReadFile(configPath)
+	if err == nil {
+		_ = yaml.Unmarshal(data, &existing)
+	}
+
+	remote, ok := existing["remote"].(map[string]any)
+	if !ok {
+		remote = make(map[string]any)
+	}
+	remote["project"] = project
+	existing["remote"] = remote
+
+	out, err := yaml.Marshal(existing)
+	if err != nil {
+		return err
+	}
+
+	if mkErr := os.MkdirAll(OreConfigDir(), 0o755); mkErr != nil {
+		return mkErr
+	}
+	return os.WriteFile(configPath, out, 0o600)
 }

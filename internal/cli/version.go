@@ -9,8 +9,9 @@ import (
 
 func newVersionCmd(info BuildInfo) *cobra.Command {
 	return &cobra.Command{
-		Use:   "version",
-		Short: "Print the ore version",
+		Use:         "version",
+		Short:       "Print the ore version",
+		Annotations: map[string]string{"skip-engine": "true"},
 		Run: func(cmd *cobra.Command, args []string) {
 			fmt.Printf("ore %s (%s/%s)\n", info.Version, runtime.GOOS, runtime.GOARCH)
 			if info.Commit != "" {

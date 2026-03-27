@@ -10,7 +10,7 @@ func newCleanCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "clean",
 		Short: "Remove the .ore/ cache and build artifacts",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			target := engine.CleanAll
 			if cacheOnly, _ := cmd.Flags().GetBool("cache"); cacheOnly {
 				target = engine.CleanCache
@@ -18,7 +18,7 @@ func newCleanCmd() *cobra.Command {
 				target = engine.CleanBuilds
 			}
 
-			return eng.Clean(cmd.Context(), configFile, target)
+			return eng.Clean(cmd.Context(), target)
 		},
 	}
 

@@ -11,8 +11,10 @@ import (
 func LoadOred() (*OredConfig, error) {
 	v := viper.New()
 
-	v.SetDefault("addr", ":8080")
+	v.SetDefault("addr", ":9090")
 	v.SetDefault("log_level", "info")
+	v.SetDefault("projects_dir", ".")
+	v.SetDefault("auth.token", "")
 
 	v.SetEnvPrefix("ORED")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))

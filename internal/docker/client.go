@@ -26,6 +26,8 @@ type Client interface {
 	ContainerRemove(ctx context.Context, containerID string, options container.RemoveOptions) error
 	ContainerList(ctx context.Context, options container.ListOptions) ([]container.Summary, error)
 	ContainerInspect(ctx context.Context, containerID string) (container.InspectResponse, error)
+	ContainerAttach(ctx context.Context, container string, options container.AttachOptions) (types.HijackedResponse, error)
+	ContainerResize(ctx context.Context, container string, options container.ResizeOptions) error
 
 	NetworkCreate(ctx context.Context, name string, options network.CreateOptions) (network.CreateResponse, error)
 	NetworkRemove(ctx context.Context, networkID string) error

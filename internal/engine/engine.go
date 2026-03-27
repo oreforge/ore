@@ -7,13 +7,13 @@ import (
 )
 
 type Engine interface {
-	Up(ctx context.Context, specPath string, noCache bool) error
-	Down(ctx context.Context, specPath string) error
-	Build(ctx context.Context, specPath string, noCache bool) error
-	Status(ctx context.Context, specPath string) (*orchestrator.NetworkStatus, error)
-	Prune(ctx context.Context, specPath string, target PruneTarget) error
-	Clean(ctx context.Context, specPath string, target CleanTarget) error
-	Console(ctx context.Context, specPath string, serverName string, replica int) error
+	Up(ctx context.Context, noCache bool) error
+	Down(ctx context.Context) error
+	Build(ctx context.Context, noCache bool) error
+	Status(ctx context.Context) (*orchestrator.NetworkStatus, error)
+	Prune(ctx context.Context, target PruneTarget) error
+	Clean(ctx context.Context, target CleanTarget) error
+	Console(ctx context.Context, serverName string, replica int) error
 	Close() error
 }
 

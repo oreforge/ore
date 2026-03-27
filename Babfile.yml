@@ -51,9 +51,10 @@ tasks:
       - cmd: go vet ./...
 
   check:
-    desc: Run all checks (fmt, lint, vet, test)
+    desc: Run all checks (fmt, proto, lint, vet, test)
     run:
       - task: fmt
+      - task: proto
       - task: lint
       - task: vet
       - task: test
@@ -67,6 +68,22 @@ tasks:
     desc: Create a release with goreleaser
     run:
       - cmd: go tool goreleaser release --clean
+
+  proto:
+    desc: Lint and generate protobuf Go code
+    run:
+      - task: proto:lint
+      - task: proto:generate
+
+  proto:lint:
+    desc: Lint protobuf definitions
+    run:
+      - cmd: go tool buf lint api/proto
+
+  proto:generate:
+    desc: Generate Go code from protobuf
+    run:
+      - cmd: go tool buf generate
 
   clean:
     desc: Remove build artifacts
@@ -87,3 +104,33 @@ tasks:
     desc: Show testnet status
     run:
       - cmd: go run ./cmd/ore status -f ./playground/ore.yaml
+
+  dev:ored:
+    desc: Run ored daemon locally for development
+    run:
+      - cmd: ORED_PROJECTS_DIR=. ORED_ADDR=:9090 go run ./cmd/ored
+
+  dev:projects:
+    desc: List projects on local ored
+    run:
+      - cmd: go run ./cmd/ore projects list
+
+  dev:use:
+    desc: Set active project on local ored (usage dev:use -- <name>)
+    run:
+      - cmd: go run ./cmd/ore projects use playground
+
+  dev:up:
+    desc: Start active project via local ored daemon
+    run:
+      - cmd: go run ./cmd/ore up
+
+  dev:down:
+    desc: Stop active project via local ored daemon
+    run:
+      - cmd: go run ./cmd/ore down
+
+  dev:status:
+    desc: Show active project status via local ored daemon
+    run:
+      - cmd: go run ./cmd/ore status

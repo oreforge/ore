@@ -26,7 +26,7 @@ func newPruneCmd() *cobra.Command {
 				return fmt.Errorf("unknown prune target %q (use: all, containers, images, volumes)", args[0])
 			}
 
-			return eng.Prune(cmd.Context(), configFile, target)
+			return eng.Prune(cmd.Context(), target)
 		},
 	}
 }

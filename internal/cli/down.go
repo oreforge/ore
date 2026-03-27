@@ -9,7 +9,7 @@ func newDownCmd() *cobra.Command {
 		Use:   "down",
 		Short: "Stop all containers and remove the network",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return eng.Down(cmd.Context(), configFile)
+			return eng.Down(cmd.Context())
 		},
 	}
 }

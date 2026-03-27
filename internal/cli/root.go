@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 
@@ -16,22 +17,21 @@ type BuildInfo struct {
 	BuildDate string
 }
 
-var (
-	configFile string
-	eng        engine.Engine
-)
+var eng engine.Engine
 
 func Run(args []string, info BuildInfo) int {
 	root := &cobra.Command{
 		Use:   "ore",
 		Short: "Infrastructure-as-code for game server networks",
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			if cmd.Annotations["skip-engine"] == "true" {
+				return nil
+			}
+
 			cfg, err := config.LoadOre(cmd.Flags())
 			if err != nil {
 				return err
 			}
-
-			configFile = cfg.File
 
 			level := slog.LevelInfo
 			if cfg.Verbose {
@@ -40,7 +40,17 @@ func Run(args []string, info BuildInfo) int {
 			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 			slog.SetDefault(logger)
 
-			eng = engine.NewLocal(logger)
+			if _, statErr := os.Stat(cfg.File); statErr == nil {
+				eng = engine.NewLocal(logger, cfg.File)
+			} else if cfg.Remote.Addr != "" {
+				var remoteErr error
+				eng, remoteErr = engine.NewRemote(cfg.Remote.Addr, cfg.Remote.Auth.Token, cfg.Remote.Project)
+				if remoteErr != nil {
+					return fmt.Errorf("connecting to ored: %w", remoteErr)
+				}
+			} else {
+				return fmt.Errorf("no %s found and no remote server configured", cfg.File)
+			}
 
 			return nil
 		},
@@ -59,11 +69,16 @@ func Run(args []string, info BuildInfo) int {
 		newPruneCmd(),
 		newCleanCmd(),
 		newConsoleCmd(),
+		newProjectsCmd(),
 		newVersionCmd(info),
 	)
 
 	root.SetArgs(args[1:])
-	if err := root.Execute(); err != nil {
+	err := root.Execute()
+	if eng != nil {
+		_ = eng.Close()
+	}
+	if err != nil {
 		slog.Error("command failed", "error", err)
 		return 1
 	}

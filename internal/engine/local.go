@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -17,19 +18,21 @@ import (
 )
 
 type Local struct {
+	specPath string
 	logger   *slog.Logger
 	registry *providers.Registry
 }
 
-func NewLocal(logger *slog.Logger) *Local {
+func NewLocal(logger *slog.Logger, specPath string) *Local {
 	return &Local{
+		specPath: specPath,
 		logger:   logger,
 		registry: providers.NewDefault(),
 	}
 }
 
-func (l *Local) Up(ctx context.Context, specPath string, noCache bool) error {
-	br, err := l.doBuild(ctx, specPath, build.Options{NoCache: noCache})
+func (l *Local) Up(ctx context.Context, noCache bool) error {
+	br, err := l.doBuild(ctx, build.Options{NoCache: noCache})
 	if err != nil {
 		return err
 	}
@@ -39,8 +42,8 @@ func (l *Local) Up(ctx context.Context, specPath string, noCache bool) error {
 	return orch.Up(ctx, br.spec, br.images)
 }
 
-func (l *Local) Down(ctx context.Context, specPath string) error {
-	s, err := spec.Load(specPath)
+func (l *Local) Down(ctx context.Context) error {
+	s, err := spec.Load(l.specPath)
 	if err != nil {
 		return err
 	}
@@ -55,8 +58,8 @@ func (l *Local) Down(ctx context.Context, specPath string) error {
 	return orch.Down(ctx, s)
 }
 
-func (l *Local) Build(ctx context.Context, specPath string, noCache bool) error {
-	br, err := l.doBuild(ctx, specPath, build.Options{NoCache: noCache, ForceBuild: true})
+func (l *Local) Build(ctx context.Context, noCache bool) error {
+	br, err := l.doBuild(ctx, build.Options{NoCache: noCache, ForceBuild: true})
 	if err != nil {
 		return err
 	}
@@ -64,8 +67,8 @@ func (l *Local) Build(ctx context.Context, specPath string, noCache bool) error 
 	return nil
 }
 
-func (l *Local) Status(ctx context.Context, specPath string) (*orchestrator.NetworkStatus, error) {
-	s, err := spec.Load(specPath)
+func (l *Local) Status(ctx context.Context) (*orchestrator.NetworkStatus, error) {
+	s, err := spec.Load(l.specPath)
 	if err != nil {
 		return nil, err
 	}
@@ -80,8 +83,8 @@ func (l *Local) Status(ctx context.Context, specPath string) (*orchestrator.Netw
 	return orch.Status(ctx, s)
 }
 
-func (l *Local) Prune(ctx context.Context, specPath string, target PruneTarget) error {
-	s, err := spec.Load(specPath)
+func (l *Local) Prune(ctx context.Context, target PruneTarget) error {
+	s, err := spec.Load(l.specPath)
 	if err != nil {
 		return err
 	}
@@ -96,24 +99,24 @@ func (l *Local) Prune(ctx context.Context, specPath string, target PruneTarget) 
 
 	switch target {
 	case PruneAll:
+		var errs []error
 		if err := orch.Down(ctx, s); err != nil {
-			l.logger.Warn("failed to stop containers", "error", err)
+			errs = append(errs, fmt.Errorf("stopping containers: %w", err))
 		}
 		if err := orch.PruneImages(ctx, s); err != nil {
-			l.logger.Warn("failed to prune images", "error", err)
+			errs = append(errs, fmt.Errorf("pruning images: %w", err))
 		}
 		if err := orch.PruneVolumes(ctx, s); err != nil {
-			l.logger.Warn("failed to prune volumes", "error", err)
+			errs = append(errs, fmt.Errorf("pruning volumes: %w", err))
 		}
-		repoRoot := filepath.Dir(specPath)
-		mgr, wdErr := cache.New(repoRoot, l.logger)
-		if wdErr == nil {
+		repoRoot := filepath.Dir(l.specPath)
+		if mgr, wdErr := cache.New(repoRoot, l.logger); wdErr == nil {
 			if cleanErr := mgr.Clean(); cleanErr != nil {
-				l.logger.Warn("failed to clean .ore directory", "error", cleanErr)
+				errs = append(errs, fmt.Errorf("cleaning .ore directory: %w", cleanErr))
 			}
 		}
 		l.logger.Info("pruned all resources")
-		return nil
+		return errors.Join(errs...)
 	case PruneContainers:
 		return orch.Down(ctx, s)
 	case PruneImages:
@@ -125,8 +128,8 @@ func (l *Local) Prune(ctx context.Context, specPath string, target PruneTarget) 
 	}
 }
 
-func (l *Local) Clean(ctx context.Context, specPath string, target CleanTarget) error {
-	repoRoot := filepath.Dir(specPath)
+func (l *Local) Clean(ctx context.Context, target CleanTarget) error {
+	repoRoot := filepath.Dir(l.specPath)
 	mgr, err := cache.New(repoRoot, l.logger)
 	if err != nil {
 		return fmt.Errorf("opening .ore directory: %w", err)
@@ -144,8 +147,8 @@ func (l *Local) Clean(ctx context.Context, specPath string, target CleanTarget) 
 	}
 }
 
-func (l *Local) Console(ctx context.Context, specPath string, serverName string, replica int) error {
-	s, err := spec.Load(specPath)
+func (l *Local) Console(ctx context.Context, serverName string, replica int) error {
+	s, err := spec.Load(l.specPath)
 	if err != nil {
 		return err
 	}
@@ -166,7 +169,8 @@ func (l *Local) Console(ctx context.Context, specPath string, serverName string,
 		containerName = fmt.Sprintf("%s-%d", serverName, replica)
 	}
 
-	cmd := exec.CommandContext(ctx, "docker", "attach", containerName)
+	fmt.Fprintln(os.Stderr, "attached to console (press ctrl+c to detach)")
+	cmd := exec.CommandContext(ctx, "docker", "attach", "--detach-keys=ctrl-c", "--sig-proxy=false", containerName)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -184,8 +188,8 @@ type buildResult struct {
 	cache  *cache.Manager
 }
 
-func (l *Local) doBuild(ctx context.Context, specPath string, opts build.Options) (*buildResult, error) {
-	s, err := spec.Load(specPath)
+func (l *Local) doBuild(ctx context.Context, opts build.Options) (*buildResult, error) {
+	s, err := spec.Load(l.specPath)
 	if err != nil {
 		return nil, err
 	}
@@ -195,7 +199,7 @@ func (l *Local) doBuild(ctx context.Context, specPath string, opts build.Options
 		return nil, fmt.Errorf("connecting to Docker: %w", err)
 	}
 
-	repoRoot := filepath.Dir(specPath)
+	repoRoot := filepath.Dir(l.specPath)
 	mgr, err := cache.New(repoRoot, l.logger)
 	if err != nil {
 		_ = dockerClient.Close()

@@ -17,10 +17,10 @@ func newStatusCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show the status of all servers in the network",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			jsonOut, _ := cmd.Flags().GetBool("json")
 
-			status, err := eng.Status(cmd.Context(), configFile)
+			status, err := eng.Status(cmd.Context())
 			if err != nil {
 				return err
 			}

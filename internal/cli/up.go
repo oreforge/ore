@@ -8,9 +8,9 @@ func newUpCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "up",
 		Short: "Build images and start the network",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			noCache, _ := cmd.Flags().GetBool("no-cache")
-			return eng.Up(cmd.Context(), configFile, noCache)
+			return eng.Up(cmd.Context(), noCache)
 		},
 	}
 
