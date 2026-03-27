@@ -12,6 +12,13 @@ go install github.com/oreforge/ore/cmd/ored@latest
 
 Or download binaries from [Releases](https://github.com/oreforge/ore/releases).
 
+## Update
+
+```sh
+go install github.com/oreforge/ore/cmd/ore@latest
+go install github.com/oreforge/ore/cmd/ored@latest
+```
+
 ## Quick Start
 
 Create an `ore.yaml`:
