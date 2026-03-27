@@ -1,0 +1,89 @@
+vars:
+  version: ${{ shell "git describe --tags --always --dirty 2>/dev/null || echo dev" }}
+  ldflags: -s -w -X main.version=${{ version }} -X main.commit=${{ shell "git rev-parse --short HEAD 2>/dev/null" }} -X main.buildDate=${{ shell "date -u +%Y-%m-%dT%H:%M:%SZ" }}
+
+tasks:
+  build:
+    desc: Build the ore and ored binaries
+    run:
+      - cmd: go build -ldflags "${{ ldflags }}" -o bin/ore ./cmd/ore
+      - cmd: go build -ldflags "${{ ldflags }}" -o bin/ored ./cmd/ored
+      - log: Built bin/ore and bin/ored (${{ version }})
+
+  build:ore:
+    desc: Build only the ore CLI
+    run:
+      - cmd: go build -ldflags "${{ ldflags }}" -o bin/ore ./cmd/ore
+
+  build:ored:
+    desc: Build only the ored daemon
+    run:
+      - cmd: go build -ldflags "${{ ldflags }}" -o bin/ored ./cmd/ored
+
+  test:
+    desc: Run all tests
+    run:
+      - cmd: go test ./...
+
+  test:race:
+    desc: Run tests with race detector
+    run:
+      - cmd: go test -race ./...
+
+  lint:
+    desc: Run golangci-lint
+    run:
+      - cmd: go tool golangci-lint run
+
+  fmt:
+    desc: Format code with gofumpt
+    run:
+      - cmd: go tool gofumpt -w .
+
+  tidy:
+    desc: Tidy Go module dependencies
+    run:
+      - cmd: go mod tidy
+
+  vet:
+    desc: Run go vet
+    run:
+      - cmd: go vet ./...
+
+  check:
+    desc: Run all checks (fmt, lint, vet, test)
+    run:
+      - task: fmt
+      - task: lint
+      - task: vet
+      - task: test
+
+  snapshot:
+    desc: Build release snapshot with goreleaser
+    run:
+      - cmd: go tool goreleaser build --snapshot --clean
+
+  release:
+    desc: Create a release with goreleaser
+    run:
+      - cmd: go tool goreleaser release --clean
+
+  clean:
+    desc: Remove build artifacts
+    run:
+      - cmd: rm -rf bin/ dist/
+
+  up:
+    desc: Build and start the testnet
+    run:
+      - cmd: go run ./cmd/ore up -f ./playground/ore.yaml
+
+  down:
+    desc: Stop the testnet
+    run:
+      - cmd: go run ./cmd/ore down -f ./playground/ore.yaml
+
+  status:
+    desc: Show testnet status
+    run:
+      - cmd: go run ./cmd/ore status -f ./playground/ore.yaml
