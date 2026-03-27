@@ -56,8 +56,22 @@ func LoadOre(flags *pflag.FlagSet) (*OreConfig, error) {
 	return cfg, nil
 }
 
+func configFilePath() string {
+	v := viper.New()
+	v.SetConfigName("config")
+	v.SetConfigType("yaml")
+	v.AddConfigPath(OreConfigDir())
+	for _, dir := range xdg.ConfigDirs {
+		v.AddConfigPath(dir + "/ore")
+	}
+	if err := v.ReadInConfig(); err == nil {
+		return v.ConfigFileUsed()
+	}
+	return filepath.Join(OreConfigDir(), "config.yaml")
+}
+
 func SaveProject(project string) error {
-	configPath := filepath.Join(OreConfigDir(), "config.yaml")
+	configPath := configFilePath()
 
 	existing := make(map[string]any)
 	data, err := os.ReadFile(configPath)
@@ -77,7 +91,7 @@ func SaveProject(project string) error {
 		return err
 	}
 
-	if mkErr := os.MkdirAll(OreConfigDir(), 0o755); mkErr != nil {
+	if mkErr := os.MkdirAll(filepath.Dir(configPath), 0o755); mkErr != nil {
 		return mkErr
 	}
 	return os.WriteFile(configPath, out, 0o600)
