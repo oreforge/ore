@@ -38,6 +38,8 @@ func LoadOre(flags *pflag.FlagSet) (*OreConfig, error) {
 		if !errors.As(err, &notFound) {
 			return nil, err
 		}
+		_ = os.MkdirAll(OreConfigDir(), 0o755)
+		_ = v.SafeWriteConfig()
 	}
 
 	if flags != nil {

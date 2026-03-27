@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"os"
 	"strings"
 
 	"github.com/adrg/xdg"
@@ -32,6 +33,8 @@ func LoadOred() (*OredConfig, error) {
 		if !errors.As(err, &notFound) {
 			return nil, err
 		}
+		_ = os.MkdirAll(OredConfigDir(), 0o755)
+		_ = v.SafeWriteConfig()
 	}
 
 	cfg := &OredConfig{}
