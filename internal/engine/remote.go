@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"time"
 
 	"google.golang.org/grpc"
@@ -18,6 +19,7 @@ import (
 type Remote struct {
 	conn    *grpc.ClientConn
 	client  orev1.OreServiceClient
+	addr    string
 	project string
 }
 
@@ -38,6 +40,7 @@ func NewRemote(addr, token, project string) (*Remote, error) {
 	return &Remote{
 		conn:    conn,
 		client:  orev1.NewOreServiceClient(conn),
+		addr:    addr,
 		project: project,
 	}, nil
 }
@@ -143,7 +146,17 @@ func (r *Remote) Console(ctx context.Context, serverName string, replica int) er
 	if err != nil {
 		return err
 	}
-	return rawConsole(resp.GetAddr(), resp.GetNonce())
+
+	consoleAddr := resp.GetAddr()
+	_, port, splitErr := net.SplitHostPort(consoleAddr)
+	if splitErr == nil {
+		remoteHost, _, _ := net.SplitHostPort(r.addr)
+		if remoteHost != "" {
+			consoleAddr = net.JoinHostPort(remoteHost, port)
+		}
+	}
+
+	return rawConsole(consoleAddr, resp.GetNonce())
 }
 
 func (r *Remote) Close() error {
