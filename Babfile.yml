@@ -51,10 +51,9 @@ tasks:
       - cmd: go vet ./...
 
   check:
-    desc: Run all checks (fmt, proto, lint, vet, test)
+    desc: Run all checks (fmt, lint, vet, test)
     run:
       - task: fmt
-      - task: proto
       - task: lint
       - task: vet
       - task: test
@@ -68,22 +67,6 @@ tasks:
     desc: Create a release with goreleaser
     run:
       - cmd: go tool goreleaser release --clean
-
-  proto:
-    desc: Lint and generate protobuf Go code
-    run:
-      - task: proto:lint
-      - task: proto:generate
-
-  proto:lint:
-    desc: Lint protobuf definitions
-    run:
-      - cmd: go tool buf lint api/proto
-
-  proto:generate:
-    desc: Generate Go code from protobuf
-    run:
-      - cmd: go tool buf generate
 
   clean:
     desc: Remove build artifacts
