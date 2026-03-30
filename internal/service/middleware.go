@@ -7,11 +7,29 @@ import (
 	"strings"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/oreforge/ore/internal/config"
 	"github.com/oreforge/ore/internal/handler"
 )
+
+func humaBearerAuth(api huma.API, token string) func(ctx huma.Context, next func(huma.Context)) {
+	expected := []byte(token)
+	return func(ctx huma.Context, next func(huma.Context)) {
+		auth := ctx.Header("Authorization")
+		if !strings.HasPrefix(auth, "Bearer ") {
+			_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "missing or invalid authorization header")
+			return
+		}
+		got := []byte(strings.TrimPrefix(auth, "Bearer "))
+		if subtle.ConstantTimeCompare(got, expected) != 1 {
+			_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "invalid token")
+			return
+		}
+		next(ctx)
+	}
+}
 
 func bearerAuth(token string) func(http.Handler) http.Handler {
 	expected := []byte(token)

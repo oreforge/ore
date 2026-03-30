@@ -15,7 +15,6 @@ import (
 func LoadOre(flags *pflag.FlagSet) (*OreConfig, error) {
 	v := viper.New()
 
-	v.SetDefault("file", "ore.yaml")
 	v.SetDefault("log_level", "info")
 	v.SetDefault("verbose", false)
 	v.SetDefault("remote.addr", "")
@@ -39,7 +38,7 @@ func LoadOre(flags *pflag.FlagSet) (*OreConfig, error) {
 			return nil, err
 		}
 		_ = os.MkdirAll(OreConfigDir(), 0o755)
-		_ = v.SafeWriteConfig()
+		_ = v.WriteConfigAs(filepath.Join(OreConfigDir(), "config.yaml"))
 	}
 
 	if flags != nil {

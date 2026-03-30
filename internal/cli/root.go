@@ -40,8 +40,9 @@ func Run(args []string, info BuildInfo) int {
 			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 			slog.SetDefault(logger)
 
-			if _, statErr := os.Stat(cfg.File); statErr == nil {
-				eng = engine.NewLocal(logger, cfg.File)
+			specFile, _ := cmd.Flags().GetString("file")
+			if _, statErr := os.Stat(specFile); statErr == nil {
+				eng = engine.NewLocal(logger, specFile)
 			} else if cfg.Remote.Addr != "" {
 				var remoteErr error
 				eng, remoteErr = engine.NewRemote(cfg.Remote.Addr, cfg.Remote.Auth.Token, cfg.Remote.Project)
@@ -49,7 +50,7 @@ func Run(args []string, info BuildInfo) int {
 					return fmt.Errorf("connecting to ored: %w", remoteErr)
 				}
 			} else {
-				return fmt.Errorf("no %s found and no remote server configured", cfg.File)
+				return fmt.Errorf("no %s found and no remote server configured", specFile)
 			}
 
 			return nil

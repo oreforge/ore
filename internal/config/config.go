@@ -1,7 +1,6 @@
 package config
 
 type OreConfig struct {
-	File     string       `mapstructure:"file"`
 	LogLevel string       `mapstructure:"log_level"`
 	Verbose  bool         `mapstructure:"verbose"`
 	Remote   RemoteConfig `mapstructure:"remote"`

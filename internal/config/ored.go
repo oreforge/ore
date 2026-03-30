@@ -1,8 +1,11 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/adrg/xdg"
@@ -34,8 +37,26 @@ func LoadOred() (*OredConfig, error) {
 		if !errors.As(err, &notFound) {
 			return nil, err
 		}
+
+		token, genErr := generateToken()
+		if genErr != nil {
+			return nil, genErr
+		}
+		v.Set("auth.token", token)
+
 		_ = os.MkdirAll(OredConfigDir(), 0o755)
-		_ = v.SafeWriteConfig()
+		if writeErr := v.WriteConfigAs(filepath.Join(OredConfigDir(), "config.yaml")); writeErr != nil {
+			return nil, writeErr
+		}
+	}
+
+	if v.GetString("auth.token") == "" {
+		token, err := generateToken()
+		if err != nil {
+			return nil, err
+		}
+		v.Set("auth.token", token)
+		_ = v.WriteConfig()
 	}
 
 	cfg := &OredConfig{}
@@ -48,4 +69,12 @@ func LoadOred() (*OredConfig, error) {
 	}
 
 	return cfg, nil
+}
+
+func generateToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
