@@ -20,6 +20,9 @@ func LoadOred() (*OredConfig, error) {
 	v.SetDefault("projects", OredProjectsDir())
 	v.SetDefault("bind_mounts", false)
 	v.SetDefault("auth.token", "")
+	v.SetDefault("git_poll.enabled", false)
+	v.SetDefault("git_poll.interval", "5m")
+	v.SetDefault("git_poll.on_update", "deploy")
 
 	v.SetEnvPrefix("ORED")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))

@@ -49,6 +49,12 @@ func Run(_ []string, info BuildInfo) int {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
+	var poller *Poller
+	if cfg.GitPoll.Enabled {
+		poller = NewPoller(cfg, logger)
+		poller.Start()
+	}
+
 	errCh := make(chan error, 1)
 	go func() {
 		logger.Info("ored listening",
@@ -75,6 +81,10 @@ func Run(_ []string, info BuildInfo) int {
 	logger.Info("shutting down")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
+	if poller != nil {
+		poller.Stop()
+	}
 
 	if err := srv.Shutdown(ctx); err != nil {
 		logger.Error("shutdown error", "error", err)
