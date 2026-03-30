@@ -40,10 +40,6 @@ func Validate(s *NetworkSpec) error {
 			return fmt.Errorf("validation: servers[%d] (%s): port must be 0-65535", i, srv.Name)
 		}
 
-		if srv.Replicas < 0 {
-			return fmt.Errorf("validation: servers[%d] (%s): replicas must be non-negative", i, srv.Name)
-		}
-
 		for j, vol := range srv.Volumes {
 			if vol.Name == "" {
 				return fmt.Errorf("validation: servers[%d] (%s): volumes[%d].name is required", i, srv.Name, j)

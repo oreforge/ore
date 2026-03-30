@@ -56,31 +56,27 @@ func (o *Orchestrator) Up(ctx context.Context, cfg *spec.NetworkSpec, images map
 		}
 
 		dataBind := o.resolveDataBind(res.ImageTag, srv.Name)
+		name := ContainerName(&srv)
 
-		containerNames := ContainerNames(&srv)
-		for _, name := range containerNames {
-			tag := res.ImageTag
-			if tag == "" {
-				tag = fmt.Sprintf("ore/%s:latest", srv.Name)
-			}
+		tag := res.ImageTag
+		if tag == "" {
+			tag = fmt.Sprintf("ore/%s:latest", srv.Name)
+		}
 
-			if err := StartContainer(ctx, o.docker, &srv, name, tag, cfg.Network, dataBind, o.logger); err != nil {
-				return fmt.Errorf("starting %s: %w", name, err)
-			}
+		if err := StartContainer(ctx, o.docker, &srv, name, tag, cfg.Network, dataBind, o.logger); err != nil {
+			return fmt.Errorf("starting %s: %w", name, err)
+		}
 
-			if err := WaitForRunning(ctx, o.docker, name, 10*time.Second); err != nil {
-				return fmt.Errorf("container %s failed to start: %w", name, err)
-			}
+		if err := WaitForRunning(ctx, o.docker, name, 10*time.Second); err != nil {
+			return fmt.Errorf("container %s failed to start: %w", name, err)
 		}
 
 		healthTimeout := res.HealthTimeout
 		if healthTimeout == 0 {
 			healthTimeout = 3 * time.Minute
 		}
-		for _, name := range containerNames {
-			if err := WaitForHealthy(ctx, o.docker, name, healthTimeout, o.logger); err != nil {
-				o.logger.Warn("health check failed", "container", name, "error", err)
-			}
+		if err := WaitForHealthy(ctx, o.docker, name, healthTimeout, o.logger); err != nil {
+			o.logger.Warn("health check failed", "container", name, "error", err)
 		}
 	}
 
@@ -115,10 +111,8 @@ func (o *Orchestrator) Down(ctx context.Context, cfg *spec.NetworkSpec) error {
 
 	for i := len(cfg.Servers) - 1; i >= 0; i-- {
 		srv := cfg.Servers[i]
-		for _, name := range ContainerNames(&srv) {
-			if err := StopContainer(ctx, o.docker, name, o.logger); err != nil {
-				o.logger.Debug("stopping container by name", "name", name, "error", err)
-			}
+		if err := StopContainer(ctx, o.docker, ContainerName(&srv), o.logger); err != nil {
+			o.logger.Debug("stopping container by name", "name", srv.Name, "error", err)
 		}
 	}
 

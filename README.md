@@ -56,7 +56,7 @@ ore down           # stop everything
 | `ore down`                | Stop all containers and remove the network                  |
 | `ore build [--no-cache]`  | Build Docker images without starting                        |
 | `ore status [--json]`     | Show server status                                          |
-| `ore console <server>`    | Attach to a server console (`-r` for replica number)        |
+| `ore console <server>`    | Attach to a server console                                  |
 | `ore prune <target>`      | Remove resources (`all`, `containers`, `images`, `volumes`) |
 | `ore clean`               | Remove `.ore/` cache (`--cache`, `--builds`)                |
 | `ore projects list`       | List available remote projects                              |
@@ -76,7 +76,6 @@ servers:
     dir: string           # path to server data directory
     software: string      # name:version (e.g. paper:1.21.11, gate:0.62.4)
     port: int             # host port binding (optional)
-    replicas: int         # number of replicas (default: 1)
     memory: string        # memory limit, e.g. 512M, 2G (optional)
     cpu: string           # CPU limit, e.g. 1.5 (optional)
     jvmFlags: [string]    # JVM flags for Java servers (optional)

@@ -50,36 +50,35 @@ func printTable(status *orchestrator.NetworkStatus) error {
 	_, _ = fmt.Fprintln(w, "SERVER\tSTATUS\tHEALTH\tIMAGE\tPORTS\tUPTIME\tRESTARTS")
 
 	for _, srv := range status.Servers {
-		for _, c := range srv.Replicas {
-			ports := "—"
-			if len(c.Ports) > 0 {
-				portStrs := make([]string, len(c.Ports))
-				for i, p := range c.Ports {
-					portStrs[i] = p.String()
-				}
-				ports = strings.Join(portStrs, ", ")
+		c := srv.Container
+		ports := "—"
+		if len(c.Ports) > 0 {
+			portStrs := make([]string, len(c.Ports))
+			for i, p := range c.Ports {
+				portStrs[i] = p.String()
 			}
-
-			uptime := "—"
-			if c.Uptime > 0 {
-				uptime = formatDuration(c.Uptime)
-			}
-
-			image := c.Image
-			if image == "" {
-				image = "—"
-			}
-
-			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%d\n",
-				c.Name,
-				c.State,
-				c.Health,
-				image,
-				ports,
-				uptime,
-				c.RestartCount,
-			)
+			ports = strings.Join(portStrs, ", ")
 		}
+
+		uptime := "—"
+		if c.Uptime > 0 {
+			uptime = formatDuration(c.Uptime)
+		}
+
+		image := c.Image
+		if image == "" {
+			image = "—"
+		}
+
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%d\n",
+			c.Name,
+			c.State,
+			c.Health,
+			image,
+			ports,
+			uptime,
+			c.RestartCount,
+		)
 	}
 
 	return w.Flush()

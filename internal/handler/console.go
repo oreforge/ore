@@ -7,51 +7,22 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"sync"
 
 	"github.com/coder/websocket"
 	"github.com/docker/docker/api/types/container"
 
 	"github.com/oreforge/ore/internal/docker"
-	"github.com/oreforge/ore/internal/spec"
 )
 
 func Console() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		specPath := SpecPathFromCtx(r.Context())
 		serverName := r.URL.Query().Get("server")
 		if serverName == "" {
 			WriteError(w, http.StatusBadRequest, "missing server query parameter")
 			return
 		}
-		replica, _ := strconv.Atoi(r.URL.Query().Get("replica"))
-		if replica == 0 {
-			replica = 1
-		}
-
-		s, err := spec.Load(specPath)
-		if err != nil {
-			WriteError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-
-		var srv *spec.ServerSpec
-		for i := range s.Servers {
-			if s.Servers[i].Name == serverName {
-				srv = &s.Servers[i]
-				break
-			}
-		}
-		if srv == nil {
-			WriteError(w, http.StatusNotFound, "server "+serverName+" not found")
-			return
-		}
-
 		containerName := serverName
-		if srv.EffectiveReplicas() > 1 {
-			containerName = serverName + "-" + strconv.Itoa(replica)
-		}
 
 		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {

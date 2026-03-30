@@ -159,30 +159,9 @@ func (l *Local) Clean(ctx context.Context, target CleanTarget) error {
 	}
 }
 
-func (l *Local) Console(ctx context.Context, serverName string, replica int) error {
-	s, err := spec.Load(l.specPath)
-	if err != nil {
-		return err
-	}
-
-	var srv *spec.ServerSpec
-	for i := range s.Servers {
-		if s.Servers[i].Name == serverName {
-			srv = &s.Servers[i]
-			break
-		}
-	}
-	if srv == nil {
-		return fmt.Errorf("server %q not found in ore.yaml", serverName)
-	}
-
-	containerName := serverName
-	if srv.EffectiveReplicas() > 1 {
-		containerName = fmt.Sprintf("%s-%d", serverName, replica)
-	}
-
+func (l *Local) Console(ctx context.Context, serverName string) error {
 	fmt.Fprintln(os.Stderr, "attached to console (press ctrl+c to detach)")
-	cmd := exec.CommandContext(ctx, "docker", "attach", "--detach-keys=ctrl-c", "--sig-proxy=false", containerName)
+	cmd := exec.CommandContext(ctx, "docker", "attach", "--detach-keys=ctrl-c", "--sig-proxy=false", serverName)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strconv"
 	"sync"
 
 	"github.com/coder/websocket"
@@ -91,12 +90,12 @@ func (r *Remote) Clean(ctx context.Context, target CleanTarget) error {
 	return r.streamRequest(ctx, "POST", "/api/clean", body)
 }
 
-func (r *Remote) Console(ctx context.Context, serverName string, replica int) error {
+func (r *Remote) Console(ctx context.Context, serverName string) error {
 	u := url.URL{
 		Scheme:   "ws",
 		Host:     r.addr,
 		Path:     "/api/console",
-		RawQuery: "server=" + url.QueryEscape(serverName) + "&replica=" + strconv.Itoa(replica),
+		RawQuery: "server=" + url.QueryEscape(serverName),
 	}
 
 	headers := http.Header{}

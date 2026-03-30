@@ -5,17 +5,12 @@ import (
 )
 
 func newConsoleCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "console <server>",
 		Short: "Attach to a running server console",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			replica, _ := cmd.Flags().GetInt("replica")
-			return eng.Console(cmd.Context(), args[0], replica)
+			return eng.Console(cmd.Context(), args[0])
 		},
 	}
-
-	cmd.Flags().IntP("replica", "r", 1, "replica number for replicated servers")
-
-	return cmd
 }

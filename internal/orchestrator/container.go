@@ -143,17 +143,8 @@ func buildEnvList(srv *spec.ServerSpec) []string {
 	return env
 }
 
-func ContainerNames(srv *spec.ServerSpec) []string {
-	replicas := srv.EffectiveReplicas()
-	if replicas == 1 {
-		return []string{srv.Name}
-	}
-
-	names := make([]string, replicas)
-	for i := range replicas {
-		names[i] = fmt.Sprintf("%s-%d", srv.Name, i+1)
-	}
-	return names
+func ContainerName(srv *spec.ServerSpec) string {
+	return srv.Name
 }
 
 func listOreContainers(ctx context.Context, client docker.Client, networkName string) ([]container.Summary, error) {

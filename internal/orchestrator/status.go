@@ -19,8 +19,8 @@ type NetworkStatus struct {
 }
 
 type ServerStatus struct {
-	Name     string            `json:"name"`
-	Replicas []ContainerStatus `json:"replicas"`
+	Name      string          `json:"name"`
+	Container ContainerStatus `json:"container"`
 }
 
 type ContainerStatus struct {
@@ -159,15 +159,9 @@ func (o *Orchestrator) Status(ctx context.Context, s *spec.NetworkSpec) (*Networ
 
 	for _, srv := range s.Servers {
 		ss := ServerStatus{
-			Name:     srv.Name,
-			Replicas: make([]ContainerStatus, 0),
+			Name:      srv.Name,
+			Container: o.inspectContainer(ctx, ContainerName(&srv)),
 		}
-
-		for _, name := range ContainerNames(&srv) {
-			cs := o.inspectContainer(ctx, name)
-			ss.Replicas = append(ss.Replicas, cs)
-		}
-
 		status.Servers = append(status.Servers, ss)
 	}
 

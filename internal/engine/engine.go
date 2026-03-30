@@ -13,7 +13,7 @@ type Engine interface {
 	Status(ctx context.Context) (*orchestrator.NetworkStatus, error)
 	Prune(ctx context.Context, target PruneTarget) error
 	Clean(ctx context.Context, target CleanTarget) error
-	Console(ctx context.Context, serverName string, replica int) error
+	Console(ctx context.Context, serverName string) error
 	Close() error
 }
 

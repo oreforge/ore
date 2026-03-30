@@ -18,27 +18,25 @@ func volumeName(networkName, containerName, volName string) string {
 }
 
 func EnsureVolumes(ctx context.Context, client docker.Client, srv *spec.ServerSpec, networkName string, logger *slog.Logger) error {
-	for _, containerName := range ContainerNames(srv) {
-		for _, vol := range srv.Volumes {
-			name := volumeName(networkName, containerName, vol.Name)
-			logger.Debug("ensuring volume", "volume", name)
-			_, err := client.VolumeCreate(ctx, volume.CreateOptions{Name: name})
-			if err != nil {
-				return fmt.Errorf("creating volume %s: %w", name, err)
-			}
+	containerName := ContainerName(srv)
+	for _, vol := range srv.Volumes {
+		name := volumeName(networkName, containerName, vol.Name)
+		logger.Debug("ensuring volume", "volume", name)
+		_, err := client.VolumeCreate(ctx, volume.CreateOptions{Name: name})
+		if err != nil {
+			return fmt.Errorf("creating volume %s: %w", name, err)
 		}
 	}
 	return nil
 }
 
 func RemoveVolumes(ctx context.Context, client docker.Client, srv *spec.ServerSpec, networkName string, logger *slog.Logger) error {
-	for _, containerName := range ContainerNames(srv) {
-		for _, vol := range srv.Volumes {
-			name := volumeName(networkName, containerName, vol.Name)
-			logger.Info("removing volume", "volume", name)
-			if err := client.VolumeRemove(ctx, name, true); err != nil {
-				return fmt.Errorf("removing volume %s: %w", name, err)
-			}
+	containerName := ContainerName(srv)
+	for _, vol := range srv.Volumes {
+		name := volumeName(networkName, containerName, vol.Name)
+		logger.Info("removing volume", "volume", name)
+		if err := client.VolumeRemove(ctx, name, true); err != nil {
+			return fmt.Errorf("removing volume %s: %w", name, err)
 		}
 	}
 	return nil
