@@ -189,6 +189,71 @@ func (r *Remote) Close() error {
 	return nil
 }
 
+func (r *Remote) AddProject(ctx context.Context, repoURL, name string) (string, error) {
+	body, _ := json.Marshal(map[string]string{"url": repoURL, "name": name})
+	req, err := r.newRequest(ctx, "POST", "/api/projects", body)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Del("X-Ore-Project")
+
+	resp, err := r.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("add project request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", r.readError(resp)
+	}
+
+	var result struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("decoding response: %w", err)
+	}
+	return result.Name, nil
+}
+
+func (r *Remote) RemoveProject(ctx context.Context, name string) error {
+	req, err := r.newRequest(ctx, "DELETE", "/api/projects/"+url.PathEscape(name), nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Del("X-Ore-Project")
+
+	resp, err := r.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("remove project request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		return r.readError(resp)
+	}
+	return nil
+}
+
+func (r *Remote) UpdateProject(ctx context.Context, name string) error {
+	req, err := r.newRequest(ctx, "PATCH", "/api/projects/"+url.PathEscape(name), nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Del("X-Ore-Project")
+
+	resp, err := r.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("update project request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return r.readError(resp)
+	}
+	return nil
+}
+
 func (r *Remote) ListProjects(ctx context.Context) ([]string, error) {
 	req, err := r.newRequest(ctx, "GET", "/api/projects", nil)
 	if err != nil {

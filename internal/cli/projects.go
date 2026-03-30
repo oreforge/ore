@@ -17,6 +17,9 @@ func newProjectsCmd() *cobra.Command {
 
 	cmd.AddCommand(
 		newProjectsListCmd(),
+		newProjectsAddCmd(),
+		newProjectsRemoveCmd(),
+		newProjectsUpdateCmd(),
 		newProjectsUseCmd(),
 		newProjectsActiveCmd(),
 	)
@@ -60,6 +63,75 @@ func newProjectsListCmd() *cobra.Command {
 					fmt.Printf("  %s\n", p)
 				}
 			}
+			return nil
+		},
+	}
+}
+
+func newProjectsAddCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "add <url>",
+		Short: "Clone a project from a git repository",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			r, err := remoteEngine()
+			if err != nil {
+				return err
+			}
+
+			name, _ := cmd.Flags().GetString("name")
+			projectName, err := r.AddProject(cmd.Context(), args[0], name)
+			if err != nil {
+				return err
+			}
+
+			fmt.Printf("added project %q\n", projectName)
+			return nil
+		},
+	}
+
+	cmd.Flags().String("name", "", "custom project name (derived from URL if empty)")
+
+	return cmd
+}
+
+func newProjectsRemoveCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "remove <name>",
+		Short: "Stop containers and remove a project",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			r, err := remoteEngine()
+			if err != nil {
+				return err
+			}
+
+			if err := r.RemoveProject(cmd.Context(), args[0]); err != nil {
+				return err
+			}
+
+			fmt.Printf("removed project %q\n", args[0])
+			return nil
+		},
+	}
+}
+
+func newProjectsUpdateCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "update <name>",
+		Short: "Pull latest changes from git",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			r, err := remoteEngine()
+			if err != nil {
+				return err
+			}
+
+			if err := r.UpdateProject(cmd.Context(), args[0]); err != nil {
+				return err
+			}
+
+			fmt.Printf("updated project %q\n", args[0])
 			return nil
 		},
 	}

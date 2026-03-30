@@ -71,6 +71,30 @@ func RegisterRoutes(api huma.API, cfg *config.OredConfig, logLevel slog.Level) {
 	}, listProjects(cfg))
 
 	huma.Register(api, huma.Operation{
+		OperationID: "add-project",
+		Summary:     "Clone a project from a git repository",
+		Method:      http.MethodPost,
+		Path:        "/projects",
+		Tags:        []string{"Projects"},
+	}, addProject(cfg))
+
+	huma.Register(api, huma.Operation{
+		OperationID: "remove-project",
+		Summary:     "Stop containers and remove a project",
+		Method:      http.MethodDelete,
+		Path:        "/projects/{name}",
+		Tags:        []string{"Projects"},
+	}, removeProject(cfg))
+
+	huma.Register(api, huma.Operation{
+		OperationID: "update-project",
+		Summary:     "Pull latest changes from git",
+		Method:      http.MethodPatch,
+		Path:        "/projects/{name}",
+		Tags:        []string{"Projects"},
+	}, updateProject(cfg))
+
+	huma.Register(api, huma.Operation{
 		OperationID: "get-status",
 		Summary:     "Get network and container status",
 		Method:      http.MethodGet,
