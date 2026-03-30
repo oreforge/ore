@@ -14,7 +14,7 @@ func LoadOred() (*OredConfig, error) {
 
 	v.SetDefault("addr", ":9090")
 	v.SetDefault("log_level", "info")
-	v.SetDefault("projects_dir", ".")
+	v.SetDefault("projects", OredProjectsDir())
 	v.SetDefault("bind_mounts", false)
 	v.SetDefault("auth.token", "")
 
@@ -40,6 +40,10 @@ func LoadOred() (*OredConfig, error) {
 
 	cfg := &OredConfig{}
 	if err := v.Unmarshal(cfg); err != nil {
+		return nil, err
+	}
+
+	if err := os.MkdirAll(cfg.Projects, 0o755); err != nil {
 		return nil, err
 	}
 

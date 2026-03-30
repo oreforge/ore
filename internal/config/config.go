@@ -14,11 +14,11 @@ type RemoteConfig struct {
 }
 
 type OredConfig struct {
-	Addr        string     `mapstructure:"addr"`
-	LogLevel    string     `mapstructure:"log_level"`
-	ProjectsDir string     `mapstructure:"projects_dir"`
-	BindMounts  bool       `mapstructure:"bind_mounts"`
-	Auth        AuthConfig `mapstructure:"auth"`
+	Addr       string     `mapstructure:"addr"`
+	LogLevel   string     `mapstructure:"log_level"`
+	Projects   string     `mapstructure:"projects"`
+	BindMounts bool       `mapstructure:"bind_mounts"`
+	Auth       AuthConfig `mapstructure:"auth"`
 }
 
 type AuthConfig struct {

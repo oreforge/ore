@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -70,6 +71,30 @@ func (s ContainerState) MarshalJSON() ([]byte, error) {
 	return []byte(fmt.Sprintf("%q", s.String())), nil
 }
 
+func (s *ContainerState) UnmarshalJSON(data []byte) error {
+	var str string
+	if err := json.Unmarshal(data, &str); err != nil {
+		return err
+	}
+	switch str {
+	case "not found":
+		*s = StateNotFound
+	case "created":
+		*s = StateCreated
+	case "running":
+		*s = StateRunning
+	case "exited":
+		*s = StateExited
+	case "paused":
+		*s = StatePaused
+	case "dead":
+		*s = StateDead
+	default:
+		*s = StateNotFound
+	}
+	return nil
+}
+
 type HealthState int
 
 const (
@@ -96,6 +121,24 @@ func (h HealthState) String() string {
 
 func (h HealthState) MarshalJSON() ([]byte, error) {
 	return []byte(fmt.Sprintf("%q", h.String())), nil
+}
+
+func (h *HealthState) UnmarshalJSON(data []byte) error {
+	var str string
+	if err := json.Unmarshal(data, &str); err != nil {
+		return err
+	}
+	switch str {
+	case "starting":
+		*h = HealthStarting
+	case "healthy":
+		*h = HealthHealthy
+	case "unhealthy":
+		*h = HealthUnhealthy
+	default:
+		*h = HealthNone
+	}
+	return nil
 }
 
 type PortBinding struct {
