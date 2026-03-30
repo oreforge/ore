@@ -4,8 +4,6 @@ import (
 	"crypto/subtle"
 	"log/slog"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -43,14 +41,9 @@ func projectResolver(cfg *config.OredConfig) func(http.Handler) http.Handler {
 				return
 			}
 
-			if filepath.Base(project) != project {
-				handler.WriteError(w, http.StatusBadRequest, "invalid project name")
-				return
-			}
-
-			specPath := filepath.Join(cfg.Projects, project, "ore.yaml")
-			if _, err := os.Stat(specPath); err != nil {
-				handler.WriteError(w, http.StatusNotFound, "project "+project+" not found")
+			specPath, err := handler.ResolveProject(cfg, project)
+			if err != nil {
+				handler.WriteError(w, http.StatusNotFound, err.Error())
 				return
 			}
 

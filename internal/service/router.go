@@ -3,6 +3,8 @@ package service
 import (
 	"log/slog"
 
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
@@ -23,17 +25,15 @@ func newRouter(cfg *config.OredConfig, logger *slog.Logger, logLevel slog.Level)
 			r.Use(bearerAuth(cfg.Auth.Token))
 		}
 
-		r.Get("/projects", handler.ListProjects(cfg))
+		humaConfig := huma.DefaultConfig("ored", "1.0.0")
+		humaConfig.Info.Description = "OreForge daemon REST API for managing game server networks"
+		humaConfig.Servers = []*huma.Server{{URL: "/api"}}
+		api := humachi.New(r, humaConfig)
+
+		handler.RegisterRoutes(api, cfg, logLevel)
 
 		r.Group(func(r chi.Router) {
 			r.Use(projectResolver(cfg))
-
-			r.Get("/status", handler.Status(cfg))
-			r.Post("/up", handler.Up(cfg, logLevel))
-			r.Post("/down", handler.Down(cfg, logLevel))
-			r.Post("/build", handler.Build(cfg, logLevel))
-			r.Post("/prune", handler.Prune(cfg, logLevel))
-			r.Post("/clean", handler.Clean(cfg, logLevel))
 			r.Get("/console", handler.Console())
 		})
 	})
