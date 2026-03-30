@@ -99,20 +99,29 @@ func (p *Poller) pollProject(ctx context.Context, name, projectDir, specPath str
 		return
 	}
 
-	pullCmd := exec.CommandContext(ctx, "git", "-C", projectDir, "pull")
-	if output, pullErr := pullCmd.CombinedOutput(); pullErr != nil {
-		logger.Error("polling: git pull failed", "error", strings.TrimSpace(string(output)))
+	fetchCmd := exec.CommandContext(ctx, "git", "-C", projectDir, "fetch", "origin")
+	if output, fetchErr := fetchCmd.CombinedOutput(); fetchErr != nil {
+		logger.Error("polling: git fetch failed", "error", strings.TrimSpace(string(output)))
 		return
 	}
 
-	after, err := gitRevParse(ctx, projectDir)
+	after, err := gitRevParse(ctx, projectDir, "origin/HEAD")
 	if err != nil {
-		logger.Error("polling: failed to get new commit", "error", err)
-		return
+		after, err = gitRevParse(ctx, projectDir, "origin/main")
+		if err != nil {
+			logger.Error("polling: failed to resolve remote HEAD", "error", err)
+			return
+		}
 	}
 
 	if before == after {
 		logger.Debug("polling: no changes", "commit", before)
+		return
+	}
+
+	resetCmd := exec.CommandContext(ctx, "git", "-C", projectDir, "reset", "--hard", after)
+	if output, resetErr := resetCmd.CombinedOutput(); resetErr != nil {
+		logger.Error("polling: git reset failed", "error", strings.TrimSpace(string(output)))
 		return
 	}
 
@@ -141,8 +150,12 @@ func (p *Poller) deploy(ctx context.Context, logger *slog.Logger, specPath strin
 	logger.Info("polling: deploy complete")
 }
 
-func gitRevParse(ctx context.Context, dir string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "HEAD")
+func gitRevParse(ctx context.Context, dir string, ref ...string) (string, error) {
+	r := "HEAD"
+	if len(ref) > 0 {
+		r = ref[0]
+	}
+	cmd := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", r)
 	out, err := cmd.Output()
 	if err != nil {
 		return "", err

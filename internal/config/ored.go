@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/adrg/xdg"
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 )
 
@@ -62,8 +63,13 @@ func LoadOred() (*OredConfig, error) {
 		_ = v.WriteConfig()
 	}
 
+	_ = v.WriteConfig()
+
 	cfg := &OredConfig{}
-	if err := v.Unmarshal(cfg); err != nil {
+	if err := v.Unmarshal(cfg, viper.DecodeHook(mapstructure.ComposeDecodeHookFunc(
+		mapstructure.StringToTimeDurationHookFunc(),
+		mapstructure.StringToSliceHookFunc(","),
+	))); err != nil {
 		return nil, err
 	}
 
