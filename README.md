@@ -1,7 +1,6 @@
 # ore
 
-Infrastructure-as-code for game server networks. Define your servers in a YAML file, and ore builds Docker images,
-manages containers, networks, and volumes.
+Infrastructure-as-code for game server networks. Define servers in YAML, and ore builds Docker images, manages containers, networks, and volumes.
 
 ## Install
 
@@ -11,13 +10,6 @@ go install github.com/oreforge/ore/cmd/ored@latest
 ```
 
 Or download binaries from [Releases](https://github.com/oreforge/ore/releases).
-
-## Update
-
-```sh
-go install github.com/oreforge/ore/cmd/ore@latest
-go install github.com/oreforge/ore/cmd/ored@latest
-```
 
 ## Quick Start
 
@@ -37,13 +29,13 @@ servers:
     dir: ./servers/lobby
     software: paper:1.21.11
     memory: 1G
-    jvmFlags: [ -Xms512M, -Xmx1G ]
+    jvmFlags: [-Xms512M, -Xmx1G]
 
   - name: survival
     dir: ./servers/survival
     software: paper:1.21.11
     memory: 2G
-    jvmFlags: [ -Xms1G, -Xmx2G ]
+    jvmFlags: [-Xms1G, -Xmx2G]
     volumes:
       - name: world
         target: /data/world
@@ -60,25 +52,19 @@ ore down           # stop everything
 
 | Command                   | Description                                                 |
 |---------------------------|-------------------------------------------------------------|
-| `ore up`                  | Build images and start the network                          |
+| `ore up [--no-cache]`     | Build images and start the network                          |
 | `ore down`                | Stop all containers and remove the network                  |
-| `ore build`               | Build Docker images without starting                        |
-| `ore status`              | Show server status (add `--json` for JSON)                  |
-| `ore console <server>`    | Attach to a server console                                  |
+| `ore build [--no-cache]`  | Build Docker images without starting                        |
+| `ore status [--json]`     | Show server status                                          |
+| `ore console <server>`    | Attach to a server console (`-r` for replica number)        |
 | `ore prune <target>`      | Remove resources (`all`, `containers`, `images`, `volumes`) |
 | `ore clean`               | Remove `.ore/` cache (`--cache`, `--builds`)                |
 | `ore projects list`       | List available remote projects                              |
 | `ore projects use <name>` | Set the active remote project                               |
 | `ore projects active`     | Show the active remote project                              |
+| `ore version`             | Print version info                                          |
 
-### Flags
-
-| Flag            | Description                                 |
-|-----------------|---------------------------------------------|
-| `-f, --file`    | Path to spec file (default: `ore.yaml`)     |
-| `-v, --verbose` | Enable debug logging                        |
-| `--no-cache`    | Skip binary cache (on `up` and `build`)     |
-| `-r, --replica` | Replica number for `console` (default: `1`) |
+Global flags: `-f <path>` spec file (default `ore.yaml`), `-v` verbose logging.
 
 ## Spec Reference
 
@@ -88,12 +74,12 @@ network: string           # Docker network name
 servers:
   - name: string          # container name
     dir: string           # path to server data directory
-    software: string      # name:version (e.g. paper:1.21.11, velocity:3.4.0, gate:0.62.4)
+    software: string      # name:version (e.g. paper:1.21.11, gate:0.62.4)
     port: int             # host port binding (optional)
     replicas: int         # number of replicas (default: 1)
     memory: string        # memory limit, e.g. 512M, 2G (optional)
     cpu: string           # CPU limit, e.g. 1.5 (optional)
-    jvmFlags: [ string ]  # JVM flags for Java servers (optional)
+    jvmFlags: [string]    # JVM flags for Java servers (optional)
     env:                  # environment variables (optional)
       KEY: value
     volumes:              # named volumes (optional)
@@ -101,98 +87,33 @@ servers:
         target: string    # mount path inside container
 ```
 
-Environment variables in values are expanded using `${VAR}` syntax.
+Values support `${VAR}` environment variable expansion.
 
 ### Supported Software
 
-| Name       | Runtime                      | Source          |
-|------------|------------------------------|-----------------|
-| `paper`    | Java (auto-detected version) | PaperMC API     |
-| `velocity` | Java 21                      | PaperMC API     |
-| `gate`     | Native binary                | GitHub Releases |
+| Name       | Runtime | Source          |
+|------------|---------|-----------------|
+| `paper`    | Java    | PaperMC API     |
+| `velocity` | Java 21 | PaperMC API     |
+| `gate`     | Native  | GitHub Releases |
 
-## Remote Mode (ored)
+## Remote Mode
 
-`ored` is a daemon that runs on a remote server and executes ore commands via gRPC. The CLI auto-detects the mode: if
-`ore.yaml` exists locally, it runs locally. Otherwise, it connects to the configured remote daemon.
+`ored` is a daemon that exposes the ore engine as a REST API. The CLI auto-detects the mode: if `ore.yaml` exists locally it runs locally, otherwise it connects to the configured remote daemon.
 
-### Setup
+All commands work identically in both modes. The console uses WebSocket for real-time bidirectional I/O.
 
-**On the server:**
+### Server Setup
 
 ```sh
-# Create a projects directory
-mkdir -p /opt/ore/projects
-
-# Place project directories inside (each with an ore.yaml)
-# /opt/ore/projects/mynetwork/ore.yaml
-# /opt/ore/projects/staging/ore.yaml
-
 # Run the daemon
 ored
 ```
 
-**On the client:**
-
-```sh
-# Configure remote connection
-# ~/.config/ore/config.yaml
-ore projects use mynetwork   # set active project
-ore up                       # runs on the remote server
-ore status
-ore console lobby
-```
-
-### CLI Configuration
-
-File: `~/.config/ore/config.yaml`
-
-```yaml
-remote:
-  addr: "myserver.example.com:9090"
-  project: "mynetwork"
-  auth:
-    token: "my-secret-token"
-```
-
-| Key                 | Env                     | Default | Description                  |
-|---------------------|-------------------------|---------|------------------------------|
-| `remote.addr`       | `ORE_REMOTE_ADDR`       |         | Daemon address (`host:port`) |
-| `remote.project`    | `ORE_REMOTE_PROJECT`    |         | Active project name          |
-| `remote.auth.token` | `ORE_REMOTE_AUTH_TOKEN` |         | Bearer token                 |
-
-### Daemon Configuration
-
-File: `~/.config/ored/config.yaml`
-
-```yaml
-addr: ":9090"
-log_level: "info"
-projects_dir: "/opt/ore/projects"
-bind_mounts: false
-auth:
-  token: "my-secret-token"
-```
-
-| Key            | Env                 | Default | Description                                            |
-|----------------|---------------------|---------|--------------------------------------------------------|
-| `addr`         | `ORED_ADDR`         | `:9090` | Listen address                                         |
-| `log_level`    | `ORED_LOG_LEVEL`    | `info`  | Log level (`debug`, `info`, `warn`, `error`)           |
-| `projects_dir` | `ORED_PROJECTS_DIR` | `.`     | Directory containing project subdirectories            |
-| `bind_mounts`  | `ORED_BIND_MOUNTS`  | `false` | Bind-mount server data dirs from cache into containers |
-| `auth.token`   | `ORED_AUTH_TOKEN`   |         | Required token for client auth                         |
-
-### Authentication
-
-When `auth.token` is set on the daemon, all clients must provide the same token. The token is sent as a `Bearer` token
-in gRPC metadata. Token comparison uses constant-time comparison to prevent timing attacks.
-
-### Multi-Project
-
-The daemon serves multiple projects from its `projects_dir`. Each subdirectory containing an `ore.yaml` is a project:
+On first run, ored creates a config file with all defaults and an auto-generated auth token. Projects are stored as subdirectories (each containing an `ore.yaml`) in the projects directory.
 
 ```
-/opt/ore/projects/
+~/.local/share/ored/projects/
   mynetwork/
     ore.yaml
     servers/
@@ -201,15 +122,75 @@ The daemon serves multiple projects from its `projects_dir`. Each subdirectory c
     servers/
 ```
 
-The active project is stored client-side in `~/.config/ore/config.yaml`. Switch with `ore projects use <name>`.
+### Client Setup
+
+Configure the CLI to connect to the remote daemon. The ore config is auto-created on first run.
+
+```yaml
+# ore config file
+remote:
+  addr: "myserver.example.com:9090"
+  auth:
+    token: "<token from ored config>"
+```
+
+```sh
+ore projects list            # list available projects
+ore projects use mynetwork   # set active project
+ore up                       # runs on the remote server
+ore status
+ore console lobby
+```
+
+### Configuration
+
+Configs follow the [XDG Base Directory](https://specifications.freedesktop.org/basedir-spec/latest/) spec via the `adrg/xdg` library.
+
+**ore** (CLI):
+
+| Key                 | Env                     | Default | Description          |
+|---------------------|-------------------------|---------|----------------------|
+| `log_level`         | `ORE_LOG_LEVEL`         | `info`  | Log level            |
+| `remote.addr`       | `ORE_REMOTE_ADDR`       |         | Daemon address       |
+| `remote.project`    | `ORE_REMOTE_PROJECT`    |         | Active project name  |
+| `remote.auth.token` | `ORE_REMOTE_AUTH_TOKEN` |         | Bearer token         |
+
+**ored** (daemon):
+
+| Key           | Env                | Default                     | Description                |
+|---------------|--------------------|-----------------------------|----------------------------|
+| `addr`        | `ORED_ADDR`        | `:9090`                     | Listen address             |
+| `log_level`   | `ORED_LOG_LEVEL`   | `info`                      | Log level                  |
+| `projects`    | `ORED_PROJECTS`    | `$XDG_DATA_HOME/ored/projects` | Projects directory      |
+| `bind_mounts` | `ORED_BIND_MOUNTS` | `false`                     | Bind-mount data dirs       |
+| `auth.token`  | `ORED_AUTH_TOKEN`  | *(auto-generated)*          | Bearer token for API auth  |
+
+### Authentication
+
+The ored daemon auto-generates a bearer token on first run and saves it to the config file. All API requests must include this token. The token is sent as `Authorization: Bearer <token>` and validated using constant-time comparison.
+
+### API Documentation
+
+When ored is running, interactive API docs are available at:
+
+```
+http://localhost:9090/api/docs
+```
+
+The OpenAPI 3.1 spec is auto-generated from the Go types and served at `/api/openapi.yaml`.
+
+### Graceful Shutdown
+
+When ored receives SIGINT or SIGTERM, it stops accepting new requests, waits for in-flight operations, then stops all running containers across all projects.
 
 ## Development
 
 ```sh
-bab build       # build ore and ored binaries
-bab check       # fmt, proto lint, go lint, vet, test
-bab proto       # lint and generate protobuf code
-bab dev:ored    # run daemon locally
-bab dev:up      # start via local daemon
-bab dev:status  # status via local daemon
+bab build        # build ore and ored binaries
+bab test         # run tests
+bab lint         # run golangci-lint
+bab check        # fmt, lint, vet, test
+bab dev:ored     # run daemon locally
+bab dev:up       # start via local daemon
+bab dev:status   # status via local daemon
 ```
