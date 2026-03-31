@@ -27,6 +27,9 @@ type Remote struct {
 }
 
 func NewRemote(addr, token, project string) (*Remote, error) {
+	if project == "" {
+		return nil, fmt.Errorf("no active project set (use 'ore projects use <name>' to select one)")
+	}
 	return &Remote{
 		addr:    addr,
 		token:   token,
@@ -323,9 +326,13 @@ func (r *Remote) streamRequest(ctx context.Context, method, path string, body []
 
 func (r *Remote) readError(resp *http.Response) error {
 	var errResp struct {
-		Error string `json:"error"`
+		Detail string `json:"detail"`
+		Error  string `json:"error"`
 	}
 	_ = json.NewDecoder(resp.Body).Decode(&errResp)
+	if errResp.Detail != "" {
+		return fmt.Errorf("ored: %s (HTTP %d)", errResp.Detail, resp.StatusCode)
+	}
 	if errResp.Error != "" {
 		return fmt.Errorf("ored: %s (HTTP %d)", errResp.Error, resp.StatusCode)
 	}
