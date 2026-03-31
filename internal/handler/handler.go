@@ -62,9 +62,12 @@ type CleanInput struct {
 }
 
 func RegisterRoutes(api huma.API, cfg *config.OredConfig, logLevel slog.Level) {
+	ndjsonDesc := "Streams progress as NDJSON (application/x-ndjson). Final line contains {\"done\":true} with an optional \"error\" field."
+
 	huma.Register(api, huma.Operation{
 		OperationID: "list-projects",
 		Summary:     "List available projects",
+		Description: "Returns the names of all projects that contain an ore.yaml file.",
 		Method:      http.MethodGet,
 		Path:        "/projects",
 		Tags:        []string{"Projects"},
@@ -73,22 +76,26 @@ func RegisterRoutes(api huma.API, cfg *config.OredConfig, logLevel slog.Level) {
 	huma.Register(api, huma.Operation{
 		OperationID: "add-project",
 		Summary:     "Clone a project from a git repository",
+		Description: "Clones the repository into the projects directory. The project name is derived from the URL unless explicitly provided.",
 		Method:      http.MethodPost,
 		Path:        "/projects",
 		Tags:        []string{"Projects"},
 	}, addProject(cfg))
 
 	huma.Register(api, huma.Operation{
-		OperationID: "remove-project",
-		Summary:     "Stop containers and remove a project",
-		Method:      http.MethodDelete,
-		Path:        "/projects/{name}",
-		Tags:        []string{"Projects"},
+		OperationID:   "remove-project",
+		Summary:       "Stop containers and remove a project",
+		Description:   "Stops all running containers for the project, then deletes the project directory.",
+		Method:        http.MethodDelete,
+		Path:          "/projects/{name}",
+		Tags:          []string{"Projects"},
+		DefaultStatus: http.StatusNoContent,
 	}, removeProject(cfg))
 
 	huma.Register(api, huma.Operation{
 		OperationID: "update-project",
 		Summary:     "Pull latest changes from git",
+		Description: "Runs git pull in the project directory to fetch the latest changes.",
 		Method:      http.MethodPatch,
 		Path:        "/projects/{name}",
 		Tags:        []string{"Projects"},
@@ -97,6 +104,7 @@ func RegisterRoutes(api huma.API, cfg *config.OredConfig, logLevel slog.Level) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-status",
 		Summary:     "Get network and container status",
+		Description: "Returns the current state of all containers in the network, including health, ports, uptime, and resource limits.",
 		Method:      http.MethodGet,
 		Path:        "/status",
 		Tags:        []string{"Operations"},
@@ -105,6 +113,7 @@ func RegisterRoutes(api huma.API, cfg *config.OredConfig, logLevel slog.Level) {
 	huma.Register(api, huma.Operation{
 		OperationID: "up",
 		Summary:     "Build images and start the network",
+		Description: ndjsonDesc,
 		Method:      http.MethodPost,
 		Path:        "/up",
 		Tags:        []string{"Operations"},
@@ -113,6 +122,7 @@ func RegisterRoutes(api huma.API, cfg *config.OredConfig, logLevel slog.Level) {
 	huma.Register(api, huma.Operation{
 		OperationID: "down",
 		Summary:     "Stop all containers and remove the network",
+		Description: ndjsonDesc,
 		Method:      http.MethodPost,
 		Path:        "/down",
 		Tags:        []string{"Operations"},
@@ -121,6 +131,7 @@ func RegisterRoutes(api huma.API, cfg *config.OredConfig, logLevel slog.Level) {
 	huma.Register(api, huma.Operation{
 		OperationID: "build",
 		Summary:     "Build Docker images for all servers",
+		Description: ndjsonDesc,
 		Method:      http.MethodPost,
 		Path:        "/build",
 		Tags:        []string{"Operations"},
@@ -129,6 +140,7 @@ func RegisterRoutes(api huma.API, cfg *config.OredConfig, logLevel slog.Level) {
 	huma.Register(api, huma.Operation{
 		OperationID: "prune",
 		Summary:     "Remove unused resources",
+		Description: ndjsonDesc,
 		Method:      http.MethodPost,
 		Path:        "/prune",
 		Tags:        []string{"Operations"},
@@ -137,6 +149,7 @@ func RegisterRoutes(api huma.API, cfg *config.OredConfig, logLevel slog.Level) {
 	huma.Register(api, huma.Operation{
 		OperationID: "clean",
 		Summary:     "Remove cache and build artifacts",
+		Description: ndjsonDesc,
 		Method:      http.MethodPost,
 		Path:        "/clean",
 		Tags:        []string{"Operations"},

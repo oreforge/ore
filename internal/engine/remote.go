@@ -157,7 +157,7 @@ func (r *Remote) RemoveProject(ctx context.Context, name string) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+	if resp.StatusCode != http.StatusNoContent {
 		return r.readError(resp)
 	}
 	return nil

@@ -3,6 +3,7 @@ package paper
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -13,10 +14,11 @@ import (
 
 type Paper struct {
 	runtimes *runtimes.Registry
+	logger   *slog.Logger
 }
 
-func New(runtimes *runtimes.Registry) *Paper {
-	return &Paper{runtimes: runtimes}
+func New(runtimes *runtimes.Registry, logger *slog.Logger) *Paper {
+	return &Paper{runtimes: runtimes, logger: logger}
 }
 
 func (p *Paper) Names() []string {
@@ -31,9 +33,10 @@ func (p *Paper) Resolve(ctx context.Context, id string, _ resolver.Platform) (*r
 		return nil, err
 	}
 
-	rt, ok := p.runtimes.Get("java:" + strconv.Itoa(java.MajorForMC(version)))
+	rtName := "java:" + strconv.Itoa(java.MajorForMC(version))
+	rt, ok := p.runtimes.Get(rtName)
 	if !ok {
-		return nil, fmt.Errorf("no java runtime registered for minecraft %s", version)
+		return nil, fmt.Errorf("no %s runtime registered", rtName)
 	}
 
 	artifact.Runtime = rt

@@ -3,6 +3,7 @@ package gate
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -12,10 +13,11 @@ import (
 
 type Gate struct {
 	runtimes *runtimes.Registry
+	logger   *slog.Logger
 }
 
-func New(runtimes *runtimes.Registry) *Gate {
-	return &Gate{runtimes: runtimes}
+func New(runtimes *runtimes.Registry, logger *slog.Logger) *Gate {
+	return &Gate{runtimes: runtimes, logger: logger}
 }
 
 func (g *Gate) Names() []string {
@@ -50,6 +52,7 @@ func (g *Gate) Resolve(ctx context.Context, id string, platform resolver.Platfor
 func (g *Gate) fetchChecksum(ctx context.Context, checksumsURL, filename string) string {
 	body, err := resolver.GetRaw(ctx, checksumsURL)
 	if err != nil {
+		g.logger.Warn("failed to fetch gate checksums", "url", checksumsURL, "error", err)
 		return ""
 	}
 
@@ -59,5 +62,7 @@ func (g *Gate) fetchChecksum(ctx context.Context, checksumsURL, filename string)
 			return parts[0]
 		}
 	}
+
+	g.logger.Warn("checksum not found for gate binary", "filename", filename)
 	return ""
 }

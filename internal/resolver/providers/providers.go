@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 
@@ -55,12 +56,12 @@ func (r *Registry) supportedSoftware() []string {
 	return names
 }
 
-func NewDefault() *Registry {
+func NewDefault(logger *slog.Logger) *Registry {
 	rr := runtimes.NewDefault()
 
 	r := NewRegistry()
-	r.Register(paper.New(rr))
-	r.Register(velocity.New(rr))
-	r.Register(gate.New(rr))
+	r.Register(paper.New(rr, logger))
+	r.Register(velocity.New(rr, logger))
+	r.Register(gate.New(rr, logger))
 	return r
 }

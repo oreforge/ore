@@ -34,7 +34,7 @@ func NewLocal(logger *slog.Logger, specPath string, opts ...LocalOption) *Local 
 	l := &Local{
 		specPath:   specPath,
 		logger:     logger,
-		registry:   providers.NewDefault(),
+		registry:   providers.NewDefault(logger),
 		bindMounts: true,
 	}
 	for _, opt := range opts {

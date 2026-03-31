@@ -11,6 +11,10 @@ import (
 	"github.com/oreforge/ore/internal/resolver/runtimes"
 )
 
+var httpClient = &http.Client{Timeout: 30 * time.Second}
+
+const maxJSONResponseBytes = 10 << 20
+
 type Platform struct {
 	OS   string
 	Arch string
@@ -39,11 +43,23 @@ func ParseSoftwareID(id string) (name, version string, ok bool) {
 }
 
 func GetJSON(ctx context.Context, url string, target any) error {
-	data, err := GetRaw(ctx, url)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(data, target)
+	req.Header.Set("User-Agent", "oreforge/ore")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %d from %s", resp.StatusCode, url)
+	}
+
+	return json.NewDecoder(io.LimitReader(resp.Body, maxJSONResponseBytes)).Decode(target)
 }
 
 func GetRaw(ctx context.Context, url string) ([]byte, error) {
@@ -53,7 +69,7 @@ func GetRaw(ctx context.Context, url string) ([]byte, error) {
 	}
 	req.Header.Set("User-Agent", "oreforge/ore")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

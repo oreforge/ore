@@ -3,6 +3,7 @@ package velocity
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/oreforge/ore/internal/resolver"
@@ -11,10 +12,11 @@ import (
 
 type Velocity struct {
 	runtimes *runtimes.Registry
+	logger   *slog.Logger
 }
 
-func New(runtimes *runtimes.Registry) *Velocity {
-	return &Velocity{runtimes: runtimes}
+func New(runtimes *runtimes.Registry, logger *slog.Logger) *Velocity {
+	return &Velocity{runtimes: runtimes, logger: logger}
 }
 
 func (v *Velocity) Names() []string {
