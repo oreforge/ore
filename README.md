@@ -8,7 +8,7 @@ Infrastructure-as-code for game server networks. Define servers in YAML, and ore
 # ore cli for local desktop (enough to get started and try ore)
 go install github.com/oreforge/ore/cmd/ore@latest
 # ored for the server (optional, only needed for real production use)
-go clean -modcache && go install github.com/oreforge/ore/cmd/ored@latest
+GONOSUMCHECK=github.com/oreforge/ore GOFLAGS=-mod=mod GONOSUMDB=github.com/oreforge/ore GOPROXY=direct go install github.com/oreforge/ore/cmd/ored@latest
 ```
 
 Or download binaries from [Releases](https://github.com/oreforge/ore/releases).
