@@ -9,10 +9,11 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/oreforge/ore/internal/config"
+	"github.com/oreforge/ore/internal/docker"
 	"github.com/oreforge/ore/internal/handler"
 )
 
-func newRouter(cfg *config.OredConfig, logger *slog.Logger, logLevel slog.Level) *chi.Mux {
+func newRouter(cfg *config.OredConfig, logger *slog.Logger, logLevel slog.Level, dockerClient docker.Client) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RealIP)
@@ -52,7 +53,7 @@ func newRouter(cfg *config.OredConfig, logger *slog.Logger, logLevel slog.Level)
 				r.Use(bearerAuth(cfg.Token))
 			}
 			r.Use(projectResolver(cfg))
-			r.Get("/console", handler.Console())
+			r.Get("/console", handler.Console(dockerClient))
 		})
 	})
 

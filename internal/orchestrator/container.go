@@ -44,7 +44,10 @@ func StartContainer(ctx context.Context, client docker.Client, srv *spec.ServerS
 		},
 	}
 
-	hostConfig := &container.HostConfig{}
+	init := true
+	hostConfig := &container.HostConfig{
+		Init: &init,
+	}
 
 	if srv.Port > 0 {
 		portStr := fmt.Sprintf("%d/tcp", srv.Port)
@@ -111,7 +114,7 @@ func StopContainer(ctx context.Context, client docker.Client, containerName stri
 }
 
 func stopAndRemove(ctx context.Context, client docker.Client, name string, logger *slog.Logger) error {
-	timeout := 10
+	timeout := 60
 	stopErr := client.ContainerStop(ctx, name, container.StopOptions{Timeout: &timeout})
 	if stopErr != nil && !cerrdefs.IsNotFound(stopErr) {
 		logger.Debug("graceful stop failed, force removing", "name", name, "error", stopErr)

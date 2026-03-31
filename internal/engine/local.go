@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
-	"os/exec"
 	"path/filepath"
+
+	"github.com/docker/docker/api/types/container"
 
 	"github.com/oreforge/ore/internal/build"
 	"github.com/oreforge/ore/internal/cache"
@@ -160,12 +160,25 @@ func (l *Local) Clean(ctx context.Context, target CleanTarget) error {
 }
 
 func (l *Local) Console(ctx context.Context, serverName string) error {
-	fmt.Fprintln(os.Stderr, "attached to console (press ctrl+c to detach)")
-	cmd := exec.CommandContext(ctx, "docker", "attach", "--detach-keys=ctrl-c", "--sig-proxy=false", serverName)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	dockerClient, err := docker.New(ctx)
+	if err != nil {
+		return fmt.Errorf("connecting to Docker: %w", err)
+	}
+	defer func() { _ = dockerClient.Close() }()
+
+	hijacked, err := dockerClient.ContainerAttach(ctx, serverName, container.AttachOptions{
+		Stream: true,
+		Stdin:  true,
+		Stdout: true,
+		Stderr: true,
+		Logs:   true,
+	})
+	if err != nil {
+		return fmt.Errorf("attaching to container %s: %w", serverName, err)
+	}
+	defer hijacked.Close()
+
+	return runConsole(ctx, newDockerConn(hijacked, dockerClient, serverName))
 }
 
 func (l *Local) Close() error {

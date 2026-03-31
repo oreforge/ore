@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/oreforge/ore/internal/config"
+	"github.com/oreforge/ore/internal/docker"
 	"github.com/oreforge/ore/internal/engine"
 )
 
@@ -41,7 +42,14 @@ func Run(_ []string, info BuildInfo) int {
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 	slog.SetDefault(logger)
 
-	router := newRouter(cfg, logger, level)
+	dockerClient, err := docker.New(context.Background())
+	if err != nil {
+		logger.Error("failed to connect to Docker", "error", err)
+		return 1
+	}
+	defer func() { _ = dockerClient.Close() }()
+
+	router := newRouter(cfg, logger, level, dockerClient)
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,

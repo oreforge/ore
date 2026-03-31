@@ -10,11 +10,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"os"
-	"sync"
 
 	"github.com/coder/websocket"
-	"golang.org/x/term"
 
 	"github.com/oreforge/ore/internal/orchestrator"
 )
@@ -111,80 +108,9 @@ func (r *Remote) Console(ctx context.Context, serverName string) error {
 	if err != nil {
 		return fmt.Errorf("console websocket: %w", err)
 	}
-	fd := int(os.Stdin.Fd())
-	width, height := 80, 24
-	isTTY := term.IsTerminal(fd)
-	if isTTY {
-		if w, h, sizeErr := term.GetSize(fd); sizeErr == nil {
-			width, height = w, h
-		}
-	}
+	conn.SetReadLimit(128 * 1024)
 
-	sizeMsg, _ := json.Marshal(map[string]int{"width": width, "height": height})
-	if err := conn.Write(ctx, websocket.MessageText, sizeMsg); err != nil {
-		return fmt.Errorf("sending terminal size: %w", err)
-	}
-
-	if isTTY {
-		oldState, termErr := term.MakeRaw(fd)
-		if termErr != nil {
-			return fmt.Errorf("setting terminal raw mode: %w", termErr)
-		}
-		defer func() { _ = term.Restore(fd, oldState) }()
-	}
-
-	_, _ = fmt.Fprint(os.Stderr, "attached to console (press ctrl+c to detach)\r\n")
-
-	wsCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	var wg sync.WaitGroup
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		defer cancel()
-		for {
-			_, data, readErr := conn.Read(wsCtx)
-			if readErr != nil {
-				return
-			}
-			if _, writeErr := os.Stdout.Write(data); writeErr != nil {
-				return
-			}
-		}
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		defer cancel()
-		buf := make([]byte, 256)
-		for {
-			n, readErr := os.Stdin.Read(buf)
-			for i := 0; i < n; i++ {
-				if buf[i] == 0x03 { // ctrl+c
-					if i > 0 {
-						_ = conn.Write(wsCtx, websocket.MessageBinary, buf[:i])
-					}
-					_ = conn.Close(websocket.StatusNormalClosure, "")
-					return
-				}
-			}
-			if n > 0 {
-				if writeErr := conn.Write(wsCtx, websocket.MessageBinary, buf[:n]); writeErr != nil {
-					return
-				}
-			}
-			if readErr != nil {
-				_ = conn.Close(websocket.StatusNormalClosure, "")
-				return
-			}
-		}
-	}()
-
-	wg.Wait()
-	return nil
+	return runConsole(ctx, &wsConn{conn: conn})
 }
 
 func (r *Remote) Close() error {
@@ -327,14 +253,10 @@ func (r *Remote) streamRequest(ctx context.Context, method, path string, body []
 func (r *Remote) readError(resp *http.Response) error {
 	var errResp struct {
 		Detail string `json:"detail"`
-		Error  string `json:"error"`
 	}
 	_ = json.NewDecoder(resp.Body).Decode(&errResp)
 	if errResp.Detail != "" {
 		return fmt.Errorf("ored: %s (HTTP %d)", errResp.Detail, resp.StatusCode)
-	}
-	if errResp.Error != "" {
-		return fmt.Errorf("ored: %s (HTTP %d)", errResp.Error, resp.StatusCode)
 	}
 	return fmt.Errorf("ored: unexpected status %d", resp.StatusCode)
 }

@@ -15,14 +15,13 @@ import (
 	"github.com/oreforge/ore/internal/docker"
 )
 
-func Console() http.HandlerFunc {
+func Console(dockerClient docker.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		serverName := r.URL.Query().Get("server")
 		if serverName == "" {
 			WriteError(w, http.StatusBadRequest, "missing server query parameter")
 			return
 		}
-		containerName := serverName
 
 		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
@@ -34,7 +33,7 @@ func Console() http.HandlerFunc {
 
 		_, msg, err := conn.Read(r.Context())
 		if err != nil {
-			logger.Error("console: reading terminal size", "error", err)
+			logger.Error("console: reading initial size", "error", err)
 			return
 		}
 		var size struct {
@@ -42,31 +41,25 @@ func Console() http.HandlerFunc {
 			Height int `json:"height"`
 		}
 		if err := json.Unmarshal(msg, &size); err != nil {
-			logger.Error("console: parsing terminal size", "error", err)
+			logger.Error("console: parsing initial size", "error", err)
 			return
 		}
 
-		dockerClient, err := docker.New(r.Context())
-		if err != nil {
-			logger.Error("console: connecting to Docker", "error", err)
-			return
-		}
-		defer func() { _ = dockerClient.Close() }()
-
-		hijacked, err := dockerClient.ContainerAttach(r.Context(), containerName, container.AttachOptions{
+		hijacked, err := dockerClient.ContainerAttach(r.Context(), serverName, container.AttachOptions{
 			Stream: true,
 			Stdin:  true,
 			Stdout: true,
 			Stderr: true,
+			Logs:   true,
 		})
 		if err != nil {
-			logger.Error("console: attaching to container", "container", containerName, "error", err)
+			logger.Error("console: attaching to container", "container", serverName, "error", err)
 			return
 		}
 		defer hijacked.Close()
 
 		if size.Width > 0 && size.Height > 0 {
-			_ = dockerClient.ContainerResize(r.Context(), containerName, container.ResizeOptions{
+			_ = dockerClient.ContainerResize(r.Context(), serverName, container.ResizeOptions{
 				Width:  uint(size.Width),
 				Height: uint(size.Height),
 			})
@@ -90,6 +83,7 @@ func Console() http.HandlerFunc {
 					}
 				}
 				if readErr != nil {
+					_ = conn.Close(websocket.StatusNormalClosure, "container process exited")
 					return
 				}
 			}
@@ -106,15 +100,14 @@ func Console() http.HandlerFunc {
 					return
 				}
 				if typ == websocket.MessageText {
-					var ctrl struct {
-						Resize bool `json:"resize"`
-						Width  int  `json:"width"`
-						Height int  `json:"height"`
+					var resize struct {
+						Width  int `json:"width"`
+						Height int `json:"height"`
 					}
-					if json.Unmarshal(data, &ctrl) == nil && ctrl.Resize {
-						_ = dockerClient.ContainerResize(ctx, containerName, container.ResizeOptions{
-							Width:  uint(ctrl.Width),
-							Height: uint(ctrl.Height),
+					if json.Unmarshal(data, &resize) == nil && resize.Width > 0 && resize.Height > 0 {
+						_ = dockerClient.ContainerResize(ctx, serverName, container.ResizeOptions{
+							Width:  uint(resize.Width),
+							Height: uint(resize.Height),
 						})
 					}
 					continue
@@ -126,6 +119,5 @@ func Console() http.HandlerFunc {
 		}()
 
 		wg.Wait()
-		_ = conn.Close(websocket.StatusNormalClosure, "")
 	}
 }
