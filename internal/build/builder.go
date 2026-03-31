@@ -37,6 +37,7 @@ type Options struct {
 type Result struct {
 	ImageTag      string
 	HealthTimeout time.Duration
+	Cached        bool
 }
 
 type Builder struct {
@@ -118,6 +119,7 @@ func (b *Builder) Build(ctx context.Context, srv *spec.ServerSpec, repoRoot stri
 
 	if !b.opts.ForceBuild && b.imageExists(ctx, imageTag) {
 		b.logger.Info("image cached, skipping build", "server", srv.Name, "tag", imageTag)
+		result.Cached = true
 		return result, nil
 	}
 	if b.opts.ForceBuild {

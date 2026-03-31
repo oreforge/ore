@@ -35,8 +35,8 @@ func NewRemote(addr, token, project string) (*Remote, error) {
 	}, nil
 }
 
-func (r *Remote) Up(ctx context.Context, noCache bool) error {
-	body, _ := json.Marshal(map[string]any{"no_cache": noCache})
+func (r *Remote) Up(ctx context.Context, opts UpOptions) error {
+	body, _ := json.Marshal(map[string]any{"no_cache": opts.NoCache, "force": opts.Force})
 	return r.streamRequest(ctx, "POST", "/api/up", body)
 }
 

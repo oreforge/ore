@@ -33,9 +33,14 @@ type NoCacheBody struct {
 	NoCache bool `json:"no_cache,omitempty" doc:"Skip local binary cache"`
 }
 
+type UpBody struct {
+	NoCache bool `json:"no_cache,omitempty" doc:"Skip local binary cache"`
+	Force   bool `json:"force,omitempty" doc:"Force restart all containers even if unchanged"`
+}
+
 type UpInput struct {
 	ProjectInput
-	Body NoCacheBody
+	Body UpBody
 }
 
 type DownInput struct {

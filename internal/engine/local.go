@@ -43,15 +43,34 @@ func NewLocal(logger *slog.Logger, specPath string, opts ...LocalOption) *Local 
 	return l
 }
 
-func (l *Local) Up(ctx context.Context, noCache bool) error {
-	br, err := l.doBuild(ctx, build.Options{NoCache: noCache})
+func (l *Local) Up(ctx context.Context, opts UpOptions) error {
+	br, err := l.doBuild(ctx, build.Options{NoCache: opts.NoCache})
 	if err != nil {
 		return err
 	}
 	defer func() { _ = br.docker.Close() }()
 
+	var prevState *cache.DeployState
+	if !opts.Force && br.cache != nil {
+		prevState = br.cache.LoadState()
+	}
+
 	orch := orchestrator.New(br.docker, l.logger, br.cache, l.bindMounts)
-	return orch.Up(ctx, br.spec, br.images)
+	newState, err := orch.Up(ctx, br.spec, br.images, orchestrator.UpOptions{
+		PrevState: prevState,
+		Force:     opts.Force,
+	})
+	if err != nil {
+		return err
+	}
+
+	if br.cache != nil && newState != nil {
+		if saveErr := br.cache.SaveState(newState); saveErr != nil {
+			l.logger.Warn("failed to save deploy state", "error", saveErr)
+		}
+	}
+
+	return nil
 }
 
 func (l *Local) Down(ctx context.Context) error {

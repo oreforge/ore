@@ -34,35 +34,72 @@ func New(dockerClient docker.Client, logger *slog.Logger, workDir *cache.Manager
 	}
 }
 
-func (o *Orchestrator) Up(ctx context.Context, cfg *spec.NetworkSpec, images map[string]build.Result) error {
-	if err := StopAllOreContainers(ctx, o.docker, cfg.Network, o.logger); err != nil {
-		o.logger.Warn("failed to clean orphaned containers", "error", err)
+type UpOptions struct {
+	PrevState *cache.DeployState
+	Force     bool
+}
+
+func (o UpOptions) prevServer(name string) cache.ServerState {
+	if o.PrevState == nil {
+		return cache.ServerState{}
+	}
+	return o.PrevState.Servers[name]
+}
+
+func (o UpOptions) prevService(name string) cache.ServiceState {
+	if o.PrevState == nil {
+		return cache.ServiceState{}
+	}
+	return o.PrevState.Services[name]
+}
+
+func (o *Orchestrator) Up(ctx context.Context, cfg *spec.NetworkSpec, images map[string]build.Result, opts UpOptions) (*cache.DeployState, error) {
+	if opts.Force || opts.PrevState == nil {
+		if err := StopAllOreContainers(ctx, o.docker, cfg.Network, o.logger); err != nil {
+			o.logger.Warn("failed to clean orphaned containers", "error", err)
+		}
+	} else {
+		o.stopRemovedContainers(ctx, cfg, opts.PrevState)
 	}
 
 	if err := EnsureNetwork(ctx, o.docker, cfg.Network, o.logger); err != nil {
-		return err
+		return nil, err
 	}
 
+	newState := cache.NewDeployState()
+
 	for _, svc := range cfg.Services {
-		if err := EnsureImage(ctx, o.docker, svc.Image, o.logger); err != nil {
-			return fmt.Errorf("pulling image for %s: %w", svc.Name, err)
-		}
-
-		if err := EnsureServiceVolumes(ctx, o.docker, &svc, cfg.Network, o.logger); err != nil {
-			return fmt.Errorf("ensuring volumes for %s: %w", svc.Name, err)
-		}
-
+		configHash := spec.ServiceConfigHash(&svc)
 		name := ServiceContainerName(&svc)
-		if err := StartServiceContainer(ctx, o.docker, &svc, name, cfg.Network, o.logger); err != nil {
-			return fmt.Errorf("starting %s: %w", name, err)
+
+		prev := opts.prevService(svc.Name)
+		if o.unchanged(ctx, name, svc.Image, prev.Image, configHash, prev.ConfigHash, opts) {
+			o.logger.Info("service unchanged, skipping", "service", name)
+		} else {
+			if err := EnsureImage(ctx, o.docker, svc.Image, o.logger); err != nil {
+				return nil, fmt.Errorf("pulling image for %s: %w", svc.Name, err)
+			}
+
+			if err := EnsureServiceVolumes(ctx, o.docker, &svc, cfg.Network, o.logger); err != nil {
+				return nil, fmt.Errorf("ensuring volumes for %s: %w", svc.Name, err)
+			}
+
+			if err := StartServiceContainer(ctx, o.docker, &svc, name, cfg.Network, o.logger); err != nil {
+				return nil, fmt.Errorf("starting %s: %w", name, err)
+			}
+
+			if err := WaitForRunning(ctx, o.docker, name, 10*time.Second); err != nil {
+				return nil, fmt.Errorf("service %s failed to start: %w", name, err)
+			}
+
+			if err := WaitForHealthy(ctx, o.docker, name, 60*time.Second, o.logger); err != nil {
+				o.logger.Warn("service health check failed", "service", name, "error", err)
+			}
 		}
 
-		if err := WaitForRunning(ctx, o.docker, name, 10*time.Second); err != nil {
-			return fmt.Errorf("service %s failed to start: %w", name, err)
-		}
-
-		if err := WaitForHealthy(ctx, o.docker, name, 60*time.Second, o.logger); err != nil {
-			o.logger.Warn("service health check failed", "service", name, "error", err)
+		newState.Services[svc.Name] = cache.ServiceState{
+			Image:      svc.Image,
+			ConfigHash: configHash,
 		}
 	}
 
@@ -72,40 +109,89 @@ func (o *Orchestrator) Up(ctx context.Context, cfg *spec.NetworkSpec, images map
 			var ok bool
 			res, ok = images[srv.Name]
 			if !ok {
-				return fmt.Errorf("no image found for server %s", srv.Name)
+				return nil, fmt.Errorf("no image found for server %s", srv.Name)
 			}
 		}
-
-		if err := EnsureVolumes(ctx, o.docker, &srv, cfg.Network, o.logger); err != nil {
-			return fmt.Errorf("ensuring volumes for %s: %w", srv.Name, err)
-		}
-
-		dataBind := o.resolveDataBind(res.ImageTag, srv.Name)
-		name := ContainerName(&srv)
 
 		tag := res.ImageTag
 		if tag == "" {
 			tag = fmt.Sprintf("ore/%s:latest", srv.Name)
 		}
 
-		if err := StartContainer(ctx, o.docker, &srv, name, tag, cfg.Network, dataBind, o.logger); err != nil {
-			return fmt.Errorf("starting %s: %w", name, err)
+		configHash := spec.ServerConfigHash(&srv, tag)
+		name := ContainerName(&srv)
+
+		prev := opts.prevServer(srv.Name)
+		if o.unchanged(ctx, name, tag, prev.ImageTag, configHash, prev.ConfigHash, opts) {
+			o.logger.Info("server unchanged, skipping", "server", name)
+		} else {
+			if err := EnsureVolumes(ctx, o.docker, &srv, cfg.Network, o.logger); err != nil {
+				return nil, fmt.Errorf("ensuring volumes for %s: %w", srv.Name, err)
+			}
+
+			dataBind := o.resolveDataBind(tag, srv.Name)
+
+			if err := StartContainer(ctx, o.docker, &srv, name, tag, cfg.Network, dataBind, o.logger); err != nil {
+				return nil, fmt.Errorf("starting %s: %w", name, err)
+			}
+
+			if err := WaitForRunning(ctx, o.docker, name, 10*time.Second); err != nil {
+				return nil, fmt.Errorf("container %s failed to start: %w", name, err)
+			}
+
+			healthTimeout := res.HealthTimeout
+			if healthTimeout == 0 {
+				healthTimeout = 3 * time.Minute
+			}
+			if err := WaitForHealthy(ctx, o.docker, name, healthTimeout, o.logger); err != nil {
+				o.logger.Warn("health check failed", "container", name, "error", err)
+			}
 		}
 
-		if err := WaitForRunning(ctx, o.docker, name, 10*time.Second); err != nil {
-			return fmt.Errorf("container %s failed to start: %w", name, err)
-		}
-
-		healthTimeout := res.HealthTimeout
-		if healthTimeout == 0 {
-			healthTimeout = 3 * time.Minute
-		}
-		if err := WaitForHealthy(ctx, o.docker, name, healthTimeout, o.logger); err != nil {
-			o.logger.Warn("health check failed", "container", name, "error", err)
+		newState.Servers[srv.Name] = cache.ServerState{
+			ImageTag:   tag,
+			ConfigHash: configHash,
 		}
 	}
 
-	return nil
+	return newState, nil
+}
+
+func (o *Orchestrator) unchanged(ctx context.Context, containerName, expectedImage, prevImage, configHash, prevConfigHash string, opts UpOptions) bool {
+	if opts.Force || opts.PrevState == nil {
+		return false
+	}
+	if prevImage != expectedImage || prevConfigHash != configHash {
+		return false
+	}
+	info, err := o.docker.ContainerInspect(ctx, containerName)
+	if err != nil {
+		return false
+	}
+	return info.State.Running && info.Config.Image == expectedImage
+}
+
+func (o *Orchestrator) stopRemovedContainers(ctx context.Context, cfg *spec.NetworkSpec, prev *cache.DeployState) {
+	current := make(map[string]bool, len(cfg.Servers)+len(cfg.Services))
+	for _, srv := range cfg.Servers {
+		current[srv.Name] = true
+	}
+	for _, svc := range cfg.Services {
+		current[svc.Name] = true
+	}
+
+	for name := range prev.Servers {
+		if !current[name] {
+			o.logger.Info("removing server no longer in spec", "server", name)
+			_ = stopAndRemove(ctx, o.docker, name, o.logger)
+		}
+	}
+	for name := range prev.Services {
+		if !current[name] {
+			o.logger.Info("removing service no longer in spec", "service", name)
+			_ = stopAndRemove(ctx, o.docker, name, o.logger)
+		}
+	}
 }
 
 func (o *Orchestrator) resolveDataBind(imageTag, serverName string) string {

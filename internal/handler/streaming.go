@@ -19,7 +19,10 @@ func up(cfg *config.OredConfig, logLevel slog.Level) func(context.Context, *UpIn
 			return nil, err
 		}
 		return newStreamResponse(cfg, specPath, logLevel, func(eng *engine.Local) error {
-			return eng.Up(ctx, input.Body.NoCache)
+			return eng.Up(ctx, engine.UpOptions{
+				NoCache: input.Body.NoCache,
+				Force:   input.Body.Force,
+			})
 		}), nil
 	}
 }

@@ -138,11 +138,7 @@ func (p *Poller) deploy(ctx context.Context, logger *slog.Logger, specPath strin
 	eng := engine.NewLocal(logger, specPath, engine.WithBindMounts(p.cfg.BindMounts))
 	defer func() { _ = eng.Close() }()
 
-	if err := eng.Down(ctx); err != nil {
-		logger.Error("polling: down failed", "error", err)
-	}
-
-	if err := eng.Up(ctx, false); err != nil {
+	if err := eng.Up(ctx, engine.UpOptions{}); err != nil {
 		logger.Error("polling: up failed", "error", err)
 		return
 	}
