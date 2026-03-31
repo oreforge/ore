@@ -2,14 +2,12 @@ package config
 
 import (
 	"errors"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/adrg/xdg"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
-	"gopkg.in/yaml.v3"
 )
 
 func LoadOre(flags *pflag.FlagSet) (*OreConfig, error) {
@@ -37,9 +35,12 @@ func LoadOre(flags *pflag.FlagSet) (*OreConfig, error) {
 		if !errors.As(err, &notFound) {
 			return nil, err
 		}
-		_ = os.MkdirAll(OreConfigDir(), 0o755)
-		_ = v.WriteConfigAs(filepath.Join(OreConfigDir(), "config.yaml"))
+		if err := writeConfig(v, OreConfigDir()); err != nil {
+			return nil, err
+		}
 	}
+
+	syncConfig(v)
 
 	if flags != nil {
 		if err := v.BindPFlags(flags); err != nil {
@@ -48,50 +49,38 @@ func LoadOre(flags *pflag.FlagSet) (*OreConfig, error) {
 	}
 
 	cfg := &OreConfig{}
-	if err := v.Unmarshal(cfg); err != nil {
+	if err := v.Unmarshal(cfg, decodeHook()); err != nil {
 		return nil, err
 	}
 
 	return cfg, nil
 }
 
-func configFilePath() string {
+func SaveProject(project string) error {
 	v := viper.New()
+
 	v.SetConfigName("config")
 	v.SetConfigType("yaml")
 	v.AddConfigPath(OreConfigDir())
 	for _, dir := range xdg.ConfigDirs {
 		v.AddConfigPath(dir + "/ore")
 	}
-	if err := v.ReadInConfig(); err == nil {
-		return v.ConfigFileUsed()
-	}
-	return filepath.Join(OreConfigDir(), "config.yaml")
-}
 
-func SaveProject(project string) error {
-	configPath := configFilePath()
-
-	existing := make(map[string]any)
-	data, err := os.ReadFile(configPath)
-	if err == nil {
-		_ = yaml.Unmarshal(data, &existing)
+	if err := v.ReadInConfig(); err != nil {
+		var notFound viper.ConfigFileNotFoundError
+		if !errors.As(err, &notFound) {
+			return err
+		}
+		if err := writeConfig(v, OreConfigDir()); err != nil {
+			return err
+		}
 	}
 
-	remote, ok := existing["remote"].(map[string]any)
-	if !ok {
-		remote = make(map[string]any)
-	}
-	remote["project"] = project
-	existing["remote"] = remote
+	v.Set("remote.project", project)
 
-	out, err := yaml.Marshal(existing)
-	if err != nil {
-		return err
+	configPath := v.ConfigFileUsed()
+	if configPath == "" {
+		configPath = filepath.Join(OreConfigDir(), "config.yaml")
 	}
-
-	if mkErr := os.MkdirAll(filepath.Dir(configPath), 0o755); mkErr != nil {
-		return mkErr
-	}
-	return os.WriteFile(configPath, out, 0o600)
+	return v.WriteConfigAs(configPath)
 }

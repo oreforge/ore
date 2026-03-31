@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,9 +49,8 @@ func LoadOred() (*OredConfig, error) {
 		}
 		v.Set("auth.token", token)
 
-		_ = os.MkdirAll(OredConfigDir(), 0o755)
-		if writeErr := v.WriteConfigAs(filepath.Join(OredConfigDir(), "config.yaml")); writeErr != nil {
-			return nil, writeErr
+		if err := writeConfig(v, OredConfigDir()); err != nil {
+			return nil, err
 		}
 	}
 
@@ -60,16 +60,12 @@ func LoadOred() (*OredConfig, error) {
 			return nil, err
 		}
 		v.Set("auth.token", token)
-		_ = v.WriteConfig()
 	}
 
-	_ = v.WriteConfig()
+	syncConfig(v)
 
 	cfg := &OredConfig{}
-	if err := v.Unmarshal(cfg, viper.DecodeHook(mapstructure.ComposeDecodeHookFunc(
-		mapstructure.StringToTimeDurationHookFunc(),
-		mapstructure.StringToSliceHookFunc(","),
-	))); err != nil {
+	if err := v.Unmarshal(cfg, decodeHook()); err != nil {
 		return nil, err
 	}
 
@@ -86,4 +82,22 @@ func generateToken() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+func writeConfig(v *viper.Viper, dir string) error {
+	_ = os.MkdirAll(dir, 0o755)
+	return v.WriteConfigAs(filepath.Join(dir, "config.yaml"))
+}
+
+func syncConfig(v *viper.Viper) {
+	if err := v.WriteConfig(); err != nil {
+		slog.Warn("failed to sync config to disk", "error", err)
+	}
+}
+
+func decodeHook() viper.DecoderConfigOption {
+	return viper.DecodeHook(mapstructure.ComposeDecodeHookFunc(
+		mapstructure.StringToTimeDurationHookFunc(),
+		mapstructure.StringToSliceHookFunc(","),
+	))
 }
