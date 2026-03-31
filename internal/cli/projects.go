@@ -45,11 +45,7 @@ func newProjectsListCmd() *cobra.Command {
 				return err
 			}
 
-			cfg, err := config.LoadOre(nil)
-			if err != nil {
-				return err
-			}
-			active := cfg.Remote.Project
+			_, _, active, _ := config.ResolveRemote(cfg)
 
 			projects, err := r.ListProjects(cmd.Context())
 			if err != nil {
@@ -144,8 +140,8 @@ func newProjectsUseCmd() *cobra.Command {
 		Args:        cobra.ExactArgs(1),
 		Annotations: map[string]string{"skip-engine": "true"},
 		RunE: func(_ *cobra.Command, args []string) error {
-			if err := config.SaveProject(args[0]); err != nil {
-				return fmt.Errorf("saving project: %w", err)
+			if err := config.SetProject(args[0]); err != nil {
+				return err
 			}
 			fmt.Printf("switched to project %q\n", args[0])
 			return nil
@@ -159,15 +155,11 @@ func newProjectsActiveCmd() *cobra.Command {
 		Short:       "Show the active project",
 		Annotations: map[string]string{"skip-engine": "true"},
 		RunE: func(_ *cobra.Command, _ []string) error {
-			cfg, err := config.LoadOre(nil)
-			if err != nil {
-				return err
-			}
-
-			if cfg.Remote.Project == "" {
+			_, _, project, _ := config.ResolveRemote(cfg)
+			if project == "" {
 				fmt.Println("no active project")
 			} else {
-				fmt.Println(cfg.Remote.Project)
+				fmt.Println(project)
 			}
 			return nil
 		},

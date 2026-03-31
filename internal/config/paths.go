@@ -21,3 +21,11 @@ func OredDataDir() string {
 func OredProjectsDir() string {
 	return filepath.Join(OredDataDir(), "projects")
 }
+
+func OreConfigFile() string {
+	return filepath.Join(OreConfigDir(), "config.yaml")
+}
+
+func OredConfigFile() string {
+	return filepath.Join(OredConfigDir(), "config.yaml")
+}

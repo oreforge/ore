@@ -60,8 +60,8 @@ func Run(_ []string, info BuildInfo) int {
 		logger.Info("ored listening",
 			"version", info.Version,
 			"addr", cfg.Addr,
+			"config", config.OredConfigFile(),
 			"projects", cfg.Projects,
-			"auth_token", cfg.Auth.Token,
 		)
 		if listenErr := srv.ListenAndServe(); listenErr != nil && listenErr != http.ErrServerClosed {
 			errCh <- listenErr

@@ -25,7 +25,7 @@ func newRouter(cfg *config.OredConfig, logger *slog.Logger, logLevel slog.Level)
 		humaConfig.Info.Description = "OreForge daemon REST API for managing game server networks"
 		humaConfig.Servers = []*huma.Server{{URL: "/api"}}
 
-		if cfg.Auth.Token != "" {
+		if cfg.Token != "" {
 			humaConfig.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
 				"bearerAuth": {
 					Type:         "http",
@@ -41,15 +41,15 @@ func newRouter(cfg *config.OredConfig, logger *slog.Logger, logLevel slog.Level)
 
 		api := humachi.New(r, humaConfig)
 
-		if cfg.Auth.Token != "" {
-			api.UseMiddleware(humaBearerAuth(api, cfg.Auth.Token))
+		if cfg.Token != "" {
+			api.UseMiddleware(humaBearerAuth(api, cfg.Token))
 		}
 
 		handler.RegisterRoutes(api, cfg, logLevel)
 
 		r.Group(func(r chi.Router) {
-			if cfg.Auth.Token != "" {
-				r.Use(bearerAuth(cfg.Auth.Token))
+			if cfg.Token != "" {
+				r.Use(bearerAuth(cfg.Token))
 			}
 			r.Use(projectResolver(cfg))
 			r.Get("/console", handler.Console())

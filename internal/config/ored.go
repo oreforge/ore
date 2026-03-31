@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,9 +18,9 @@ func LoadOred() (*OredConfig, error) {
 
 	v.SetDefault("addr", ":9090")
 	v.SetDefault("log_level", "info")
+	v.SetDefault("token", "")
 	v.SetDefault("projects", OredProjectsDir())
 	v.SetDefault("bind_mounts", false)
-	v.SetDefault("auth.token", "")
 	v.SetDefault("git_poll.enabled", false)
 	v.SetDefault("git_poll.interval", "5m")
 	v.SetDefault("git_poll.on_update", "deploy")
@@ -37,32 +36,20 @@ func LoadOred() (*OredConfig, error) {
 		v.AddConfigPath(dir + "/ored")
 	}
 
-	if err := v.ReadInConfig(); err != nil {
-		var notFound viper.ConfigFileNotFoundError
-		if !errors.As(err, &notFound) {
-			return nil, err
-		}
-
-		token, genErr := generateToken()
-		if genErr != nil {
-			return nil, genErr
-		}
-		v.Set("auth.token", token)
-
-		if err := writeConfig(v, OredConfigDir()); err != nil {
-			return nil, err
-		}
+	if err := readOrCreateConfig(v, OredConfigFile()); err != nil {
+		return nil, err
 	}
 
-	if v.GetString("auth.token") == "" {
+	if v.GetString("token") == "" {
 		token, err := generateToken()
 		if err != nil {
 			return nil, err
 		}
-		v.Set("auth.token", token)
+		v.Set("token", token)
+		if err := v.WriteConfig(); err != nil {
+			return nil, err
+		}
 	}
-
-	syncConfig(v)
 
 	cfg := &OredConfig{}
 	if err := v.Unmarshal(cfg, decodeHook()); err != nil {
@@ -84,15 +71,21 @@ func generateToken() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-func writeConfig(v *viper.Viper, dir string) error {
-	_ = os.MkdirAll(dir, 0o755)
-	return v.WriteConfigAs(filepath.Join(dir, "config.yaml"))
-}
-
-func syncConfig(v *viper.Viper) {
-	if err := v.WriteConfig(); err != nil {
-		slog.Warn("failed to sync config to disk", "error", err)
+func readOrCreateConfig(v *viper.Viper, path string) error {
+	if err := v.ReadInConfig(); err != nil {
+		var notFound viper.ConfigFileNotFoundError
+		if !errors.As(err, &notFound) {
+			return err
+		}
+		_ = os.MkdirAll(filepath.Dir(path), 0o755)
+		if err := v.SafeWriteConfigAs(path); err != nil {
+			var alreadyExists viper.ConfigFileAlreadyExistsError
+			if !errors.As(err, &alreadyExists) {
+				return err
+			}
+		}
 	}
+	return nil
 }
 
 func decodeHook() viper.DecoderConfigOption {
