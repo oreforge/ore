@@ -24,7 +24,8 @@ servers:
   - name: proxy
     dir: ./servers/proxy
     software: gate:0.62.4
-    port: 25565
+    ports:
+      - "25565:25565"
     memory: 512M
 
   - name: lobby
@@ -41,6 +42,18 @@ servers:
     volumes:
       - name: world
         target: /data/world
+
+services:
+  - name: database
+    image: postgres:16
+    ports:
+      - "5432:5432"
+    env:
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: mynetwork
+    volumes:
+      - name: data
+        target: /var/lib/postgresql/data
 ```
 
 ```sh
@@ -86,7 +99,8 @@ servers:
   - name: string            # container name
     dir: string             # path to server data directory
     software: string        # name:version (e.g. paper:1.21.11, gate:0.62.4)
-    port: int               # host port binding (optional)
+    ports:                  # host:container port mappings (optional)
+      - "host:container"
     memory: string          # memory limit, e.g. 512M, 2G (optional)
     cpu: string             # CPU limit, e.g. 1.5 (optional)
     jvmFlags: [ string ]    # JVM flags for Java servers (optional)
@@ -95,7 +109,22 @@ servers:
     volumes:                # named volumes (optional)
       - name: string
         target: string      # mount path inside container
+
+services:
+  - name: string            # container name
+    image: string           # Docker image (e.g. postgres:16, redis:7)
+    ports:                  # host:container port mappings (optional)
+      - "host:container"
+    env:                    # environment variables (optional)
+      KEY: value
+    volumes:                # named volumes (optional)
+      - name: string
+        target: string      # mount path inside container
 ```
+
+All containers join the same Docker bridge network and can reach each other by name. Services start before servers and stop after them.
+
+Ports are only needed for external access from the host. Internal container-to-container communication works on any port via Docker DNS (e.g. `database:5432`).
 
 Values support `${VAR}` environment variable expansion.
 
