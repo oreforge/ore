@@ -32,9 +32,11 @@ func StartContainer(ctx context.Context, client docker.Client, srv *spec.ServerS
 
 	logger.Info("creating container", "name", containerName, "image", imageTag)
 
+	env := buildEnvList(srv)
+
 	containerConfig := &container.Config{
 		Image:     imageTag,
-		Env:       buildEnvList(srv),
+		Env:       env,
 		Tty:       true,
 		OpenStdin: true,
 		Labels: map[string]string{
@@ -47,15 +49,14 @@ func StartContainer(ctx context.Context, client docker.Client, srv *spec.ServerS
 	init := true
 	hostConfig := &container.HostConfig{
 		Init: &init,
+		RestartPolicy: container.RestartPolicy{
+			Name:              container.RestartPolicyOnFailure,
+			MaximumRetryCount: 3,
+		},
 	}
 
-	if srv.Port > 0 {
-		portStr := fmt.Sprintf("%d/tcp", srv.Port)
-		port := nat.Port(portStr)
-		containerConfig.ExposedPorts = nat.PortSet{port: {}}
-		hostConfig.PortBindings = nat.PortMap{
-			port: {{HostPort: fmt.Sprintf("%d", srv.Port)}},
-		}
+	if err := bindPorts(srv.Ports, containerConfig, hostConfig); err != nil {
+		return err
 	}
 
 	if srv.Memory != "" {
@@ -84,14 +85,11 @@ func StartContainer(ctx context.Context, client docker.Client, srv *spec.ServerS
 		hostConfig.Binds = append(hostConfig.Binds, volName+":"+vol.Target)
 	}
 
-	hostConfig.RestartPolicy = container.RestartPolicy{
-		Name:              container.RestartPolicyOnFailure,
-		MaximumRetryCount: 3,
-	}
-
 	networkConfig := &network.NetworkingConfig{
 		EndpointsConfig: map[string]*network.EndpointSettings{
-			networkName: {},
+			networkName: {
+				Aliases: []string{srv.Name},
+			},
 		},
 	}
 
@@ -106,6 +104,115 @@ func StartContainer(ctx context.Context, client docker.Client, srv *spec.ServerS
 
 	logger.Info("container started", "name", containerName)
 	return nil
+}
+
+func StartServiceContainer(ctx context.Context, client docker.Client, svc *spec.ServiceSpec, containerName, networkName string, logger *slog.Logger) error {
+	if err := stopAndRemove(ctx, client, containerName, logger); err != nil {
+		return err
+	}
+
+	logger.Info("creating service container", "name", containerName, "image", svc.Image)
+
+	containerConfig := &container.Config{
+		Image: svc.Image,
+		Env:   sortedEnv(svc.Env),
+		Labels: map[string]string{
+			labelManaged: "true",
+			labelNetwork: networkName,
+			labelServer:  svc.Name,
+		},
+	}
+
+	init := true
+	hostConfig := &container.HostConfig{
+		Init: &init,
+		RestartPolicy: container.RestartPolicy{
+			Name:              container.RestartPolicyOnFailure,
+			MaximumRetryCount: 3,
+		},
+	}
+
+	if err := bindPorts(svc.Ports, containerConfig, hostConfig); err != nil {
+		return err
+	}
+
+	for _, vol := range svc.Volumes {
+		volName := volumeName(networkName, containerName, vol.Name)
+		hostConfig.Binds = append(hostConfig.Binds, volName+":"+vol.Target)
+	}
+
+	networkConfig := &network.NetworkingConfig{
+		EndpointsConfig: map[string]*network.EndpointSettings{
+			networkName: {
+				Aliases: []string{svc.Name},
+			},
+		},
+	}
+
+	resp, err := client.ContainerCreate(ctx, containerConfig, hostConfig, networkConfig, nil, containerName)
+	if err != nil {
+		return fmt.Errorf("creating service container %s: %w", containerName, err)
+	}
+
+	if err := client.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
+		return fmt.Errorf("starting service container %s: %w", containerName, err)
+	}
+
+	logger.Info("service container started", "name", containerName)
+	return nil
+}
+
+func bindPorts(ports []string, containerCfg *container.Config, hostCfg *container.HostConfig) error {
+	for _, p := range ports {
+		pm, err := spec.ParsePort(p)
+		if err != nil {
+			return fmt.Errorf("parsing port %q: %w", p, err)
+		}
+		containerPort := nat.Port(fmt.Sprintf("%d/tcp", pm.Container))
+		if containerCfg.ExposedPorts == nil {
+			containerCfg.ExposedPorts = nat.PortSet{}
+		}
+		containerCfg.ExposedPorts[containerPort] = struct{}{}
+		if hostCfg.PortBindings == nil {
+			hostCfg.PortBindings = nat.PortMap{}
+		}
+		hostCfg.PortBindings[containerPort] = append(
+			hostCfg.PortBindings[containerPort],
+			nat.PortBinding{HostPort: fmt.Sprintf("%d", pm.Host)},
+		)
+	}
+	return nil
+}
+
+func sortedEnv(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	env := make([]string, 0, len(keys))
+	for _, k := range keys {
+		env = append(env, k+"="+m[k])
+	}
+	return env
+}
+
+func buildEnvList(srv *spec.ServerSpec) []string {
+	var env []string
+	if len(srv.JVMFlags) > 0 {
+		env = append(env, "ORE_JVM_FLAGS="+strings.Join(srv.JVMFlags, " "))
+	}
+	env = append(env, sortedEnv(srv.Env)...)
+	return env
+}
+
+func ContainerName(srv *spec.ServerSpec) string {
+	return srv.Name
+}
+
+func ServiceContainerName(svc *spec.ServiceSpec) string {
+	return svc.Name
 }
 
 func StopContainer(ctx context.Context, client docker.Client, containerName string, logger *slog.Logger) error {
@@ -125,29 +232,6 @@ func stopAndRemove(ctx context.Context, client docker.Client, name string, logge
 		return fmt.Errorf("removing container %s: %w", name, err)
 	}
 	return nil
-}
-
-func buildEnvList(srv *spec.ServerSpec) []string {
-	var env []string
-
-	if len(srv.JVMFlags) > 0 {
-		env = append(env, "ORE_JVM_FLAGS="+strings.Join(srv.JVMFlags, " "))
-	}
-
-	keys := make([]string, 0, len(srv.Env))
-	for k := range srv.Env {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		env = append(env, k+"="+srv.Env[k])
-	}
-
-	return env
-}
-
-func ContainerName(srv *spec.ServerSpec) string {
-	return srv.Name
 }
 
 func listOreContainers(ctx context.Context, client docker.Client, networkName string) ([]container.Summary, error) {

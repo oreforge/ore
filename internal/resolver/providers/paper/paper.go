@@ -3,7 +3,6 @@ package paper
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strconv"
 	"time"
 
@@ -14,11 +13,10 @@ import (
 
 type Paper struct {
 	runtimes *runtimes.Registry
-	logger   *slog.Logger
 }
 
-func New(runtimes *runtimes.Registry, logger *slog.Logger) *Paper {
-	return &Paper{runtimes: runtimes, logger: logger}
+func New(runtimes *runtimes.Registry) *Paper {
+	return &Paper{runtimes: runtimes}
 }
 
 func (p *Paper) Names() []string {

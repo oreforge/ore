@@ -3,11 +3,13 @@ package orchestrator
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
 
 	"github.com/oreforge/ore/internal/build"
@@ -39,6 +41,29 @@ func (o *Orchestrator) Up(ctx context.Context, cfg *spec.NetworkSpec, images map
 
 	if err := EnsureNetwork(ctx, o.docker, cfg.Network, o.logger); err != nil {
 		return err
+	}
+
+	for _, svc := range cfg.Services {
+		if err := EnsureImage(ctx, o.docker, svc.Image, o.logger); err != nil {
+			return fmt.Errorf("pulling image for %s: %w", svc.Name, err)
+		}
+
+		if err := EnsureServiceVolumes(ctx, o.docker, &svc, cfg.Network, o.logger); err != nil {
+			return fmt.Errorf("ensuring volumes for %s: %w", svc.Name, err)
+		}
+
+		name := ServiceContainerName(&svc)
+		if err := StartServiceContainer(ctx, o.docker, &svc, name, cfg.Network, o.logger); err != nil {
+			return fmt.Errorf("starting %s: %w", name, err)
+		}
+
+		if err := WaitForRunning(ctx, o.docker, name, 10*time.Second); err != nil {
+			return fmt.Errorf("service %s failed to start: %w", name, err)
+		}
+
+		if err := WaitForHealthy(ctx, o.docker, name, 60*time.Second, o.logger); err != nil {
+			o.logger.Warn("service health check failed", "service", name, "error", err)
+		}
 	}
 
 	for _, srv := range cfg.Servers {
@@ -116,6 +141,13 @@ func (o *Orchestrator) Down(ctx context.Context, cfg *spec.NetworkSpec) error {
 		}
 	}
 
+	for i := len(cfg.Services) - 1; i >= 0; i-- {
+		svc := cfg.Services[i]
+		if err := StopContainer(ctx, o.docker, ServiceContainerName(&svc), o.logger); err != nil {
+			o.logger.Debug("stopping service container by name", "name", svc.Name, "error", err)
+		}
+	}
+
 	if err := RemoveNetwork(ctx, o.docker, cfg.Network, o.logger); err != nil {
 		if !strings.Contains(err.Error(), "not found") {
 			o.logger.Warn("failed to remove network", "network", cfg.Network, "error", err)
@@ -156,6 +188,40 @@ func (o *Orchestrator) PruneVolumes(ctx context.Context, cfg *spec.NetworkSpec) 
 		}
 	}
 
+	for _, svc := range cfg.Services {
+		if err := RemoveServiceVolumes(ctx, o.docker, &svc, cfg.Network, o.logger); err != nil {
+			o.logger.Warn("failed to remove volumes", "service", svc.Name, "error", err)
+		}
+	}
+
 	o.logger.Info("pruned volumes")
+	return nil
+}
+
+func EnsureImage(ctx context.Context, client docker.Client, imageRef string, logger *slog.Logger) error {
+	images, err := client.ImageList(ctx, image.ListOptions{
+		Filters: filters.NewArgs(filters.Arg("reference", imageRef)),
+	})
+	if err != nil {
+		return fmt.Errorf("listing images: %w", err)
+	}
+
+	if len(images) > 0 {
+		logger.Debug("image already present", "image", imageRef)
+		return nil
+	}
+
+	logger.Info("pulling image", "image", imageRef)
+	reader, err := client.ImagePull(ctx, imageRef, image.PullOptions{})
+	if err != nil {
+		return fmt.Errorf("pulling image %s: %w", imageRef, err)
+	}
+	defer func() { _ = reader.Close() }()
+
+	if _, err := io.Copy(io.Discard, reader); err != nil {
+		return fmt.Errorf("reading pull response for %s: %w", imageRef, err)
+	}
+
+	logger.Info("image pulled", "image", imageRef)
 	return nil
 }

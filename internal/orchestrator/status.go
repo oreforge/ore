@@ -14,8 +14,9 @@ import (
 )
 
 type NetworkStatus struct {
-	Network string         `json:"network" doc:"Network name"`
-	Servers []ServerStatus `json:"servers" doc:"Status of each server in the network"`
+	Network  string         `json:"network" doc:"Network name"`
+	Servers  []ServerStatus `json:"servers" doc:"Status of each server in the network"`
+	Services []ServerStatus `json:"services,omitempty" doc:"Status of each service in the network"`
 }
 
 type ServerStatus struct {
@@ -163,6 +164,14 @@ func (o *Orchestrator) Status(ctx context.Context, s *spec.NetworkSpec) (*Networ
 			Container: o.inspectContainer(ctx, ContainerName(&srv)),
 		}
 		status.Servers = append(status.Servers, ss)
+	}
+
+	for _, svc := range s.Services {
+		ss := ServerStatus{
+			Name:      svc.Name,
+			Container: o.inspectContainer(ctx, ServiceContainerName(&svc)),
+		}
+		status.Services = append(status.Services, ss)
 	}
 
 	return status, nil

@@ -60,8 +60,8 @@ func NewDefault(logger *slog.Logger) *Registry {
 	rr := runtimes.NewDefault()
 
 	r := NewRegistry()
-	r.Register(paper.New(rr, logger))
-	r.Register(velocity.New(rr, logger))
+	r.Register(paper.New(rr))
+	r.Register(velocity.New(rr))
 	r.Register(gate.New(rr, logger))
 	return r
 }
