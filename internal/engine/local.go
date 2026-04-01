@@ -222,6 +222,13 @@ func (l *Local) doBuild(ctx context.Context, opts build.Options) (*buildResult, 
 		return nil, fmt.Errorf("connecting to Docker: %w", err)
 	}
 
+	bk, err := docker.NewBuildKitClient(ctx, dockerClient)
+	if err != nil {
+		_ = dockerClient.Close()
+		return nil, fmt.Errorf("connecting to BuildKit: %w", err)
+	}
+	defer func() { _ = bk.Close() }()
+
 	repoRoot := filepath.Dir(l.specPath)
 	mgr, err := cache.New(repoRoot, l.logger)
 	if err != nil {
@@ -229,7 +236,7 @@ func (l *Local) doBuild(ctx context.Context, opts build.Options) (*buildResult, 
 		return nil, fmt.Errorf("initializing .ore directory: %w", err)
 	}
 
-	builder := build.NewBuilder(dockerClient, l.registry, l.logger, mgr, opts)
+	builder := build.NewBuilder(dockerClient, bk, l.registry, l.logger, mgr, opts)
 	images, err := builder.BuildAll(ctx, s, repoRoot)
 	if err != nil {
 		_ = dockerClient.Close()

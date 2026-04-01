@@ -162,10 +162,10 @@ func (w *Manager) WriteDataDir(serverName, cacheKey, serverDir string) error {
 	}
 	destDir := filepath.Join(dir, "data")
 	_ = os.RemoveAll(destDir)
-	return copyDir(serverDir, destDir)
+	return CopyDir(serverDir, destDir)
 }
 
-func copyDir(src, dst string) error {
+func CopyDir(src, dst string) error {
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -184,6 +184,22 @@ func copyDir(src, dst string) error {
 		}
 		return os.WriteFile(target, data, info.Mode())
 	})
+}
+
+func (w *Manager) WriteBinary(serverName, cacheKey, name string, data []byte, mode os.FileMode) error {
+	dir, err := w.BuildDir(serverName, cacheKey)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, name), data, mode)
+}
+
+func (w *Manager) WriteEntrypoint(serverName, cacheKey string, data []byte) error {
+	dir, err := w.BuildDir(serverName, cacheKey)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "entrypoint.sh"), data, 0o755)
 }
 
 func (w *Manager) CreateBuildLog(serverName, cacheKey string) (io.WriteCloser, error) {

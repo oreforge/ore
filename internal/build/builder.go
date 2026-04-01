@@ -1,8 +1,6 @@
 package build
 
 import (
-	"archive/tar"
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -12,13 +10,13 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"sync"
 	"time"
 
-	dockerbuild "github.com/docker/docker/api/types/build"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
+	bkclient "github.com/moby/buildkit/client"
+	"github.com/tonistiigi/fsutil"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 
@@ -42,6 +40,7 @@ type Result struct {
 
 type Builder struct {
 	docker    docker.Client
+	bk        *bkclient.Client
 	registry  *providers.Registry
 	logger    *slog.Logger
 	workDir   *cache.Manager
@@ -49,9 +48,10 @@ type Builder struct {
 	fetchOnce singleflight.Group
 }
 
-func NewBuilder(dockerClient docker.Client, registry *providers.Registry, logger *slog.Logger, workDir *cache.Manager, opts Options) *Builder {
+func NewBuilder(dockerClient docker.Client, bk *bkclient.Client, registry *providers.Registry, logger *slog.Logger, workDir *cache.Manager, opts Options) *Builder {
 	return &Builder{
 		docker:   dockerClient,
+		bk:       bk,
 		registry: registry,
 		logger:   logger,
 		workDir:  workDir,
@@ -141,52 +141,22 @@ func (b *Builder) Build(ctx context.Context, srv *spec.ServerSpec, repoRoot stri
 		HealthRetries: artifact.HealthRetries,
 	}
 	dockerfile := GenerateDockerfile(dfOpts)
-
 	entrypoint := artifact.Runtime.Entrypoint()
+	binaryName := artifact.Runtime.BinaryName()
+	binaryMode := os.FileMode(artifact.Runtime.BinaryMode())
 
-	if b.workDir != nil {
-		b.workDir.CleanOldBuilds(srv.Name, cacheKey)
-		if err := b.workDir.WriteDockerfile(srv.Name, cacheKey, dockerfile); err != nil {
-			b.logger.Warn("failed to write Dockerfile artifact", "error", err)
-		}
-		if err := b.workDir.WriteDataDir(srv.Name, cacheKey, serverDir); err != nil {
-			b.logger.Warn("failed to write data dir artifact", "error", err)
-		}
+	buildDir, cleanup, err := b.prepareBuildDir(srv.Name, cacheKey, serverDir, dockerfile, entrypoint, binaryName, binaryData, binaryMode)
+	if err != nil {
+		return Result{}, fmt.Errorf("preparing build context: %w", err)
+	}
+	if cleanup != nil {
+		defer cleanup()
 	}
 
 	b.logger.Info("building image", "server", srv.Name, "tag", imageTag)
 
-	binaryName := artifact.Runtime.BinaryName()
-
-	buildCtx, err := createBuildContext(binaryData, binaryName, artifact.Runtime.BinaryMode(), serverDir, dockerfile, entrypoint)
-	if err != nil {
-		return Result{}, fmt.Errorf("creating build context: %w", err)
-	}
-
-	resp, err := b.docker.ImageBuild(ctx, buildCtx, dockerbuild.ImageBuildOptions{
-		Tags:        []string{imageTag},
-		Remove:      true,
-		ForceRemove: true,
-	})
-	if err != nil {
-		return Result{}, fmt.Errorf("docker build: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	var buildOut io.Writer
-	if b.workDir != nil {
-		logFile, logErr := b.workDir.CreateBuildLog(srv.Name, cacheKey)
-		if logErr == nil {
-			defer func() { _ = logFile.Close() }()
-			buildOut = logFile
-		}
-	}
-	if buildOut == nil {
-		buildOut = io.Discard
-	}
-
-	if _, err := io.Copy(buildOut, resp.Body); err != nil {
-		return Result{}, fmt.Errorf("reading build output: %w", err)
+	if err := b.buildWithBuildKit(ctx, buildDir, imageTag, srv.Name, cacheKey); err != nil {
+		return Result{}, err
 	}
 
 	duration := time.Since(startedAt)
@@ -210,6 +180,122 @@ func (b *Builder) Build(ctx context.Context, srv *spec.ServerSpec, repoRoot stri
 	}
 
 	return result, nil
+}
+
+func (b *Builder) prepareBuildDir(serverName, cacheKey, serverDir, dockerfile, entrypoint, binaryName string, binaryData []byte, binaryMode os.FileMode) (string, func(), error) {
+	if b.workDir != nil {
+		b.workDir.CleanOldBuilds(serverName, cacheKey)
+		if err := b.workDir.WriteDockerfile(serverName, cacheKey, dockerfile); err != nil {
+			return "", nil, fmt.Errorf("writing Dockerfile: %w", err)
+		}
+		if err := b.workDir.WriteDataDir(serverName, cacheKey, serverDir); err != nil {
+			return "", nil, fmt.Errorf("writing data dir: %w", err)
+		}
+		if err := b.workDir.WriteBinary(serverName, cacheKey, binaryName, binaryData, binaryMode); err != nil {
+			return "", nil, fmt.Errorf("writing binary: %w", err)
+		}
+		if entrypoint != "" {
+			if err := b.workDir.WriteEntrypoint(serverName, cacheKey, []byte(entrypoint)); err != nil {
+				return "", nil, fmt.Errorf("writing entrypoint: %w", err)
+			}
+		}
+		dir, err := b.workDir.BuildDir(serverName, cacheKey)
+		return dir, nil, err
+	}
+
+	tmpDir, err := os.MkdirTemp("", "ore-build-*")
+	if err != nil {
+		return "", nil, err
+	}
+	cleanup := func() { _ = os.RemoveAll(tmpDir) }
+
+	if err := os.WriteFile(filepath.Join(tmpDir, "Dockerfile"), []byte(dockerfile), 0o644); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, binaryName), binaryData, binaryMode); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	if entrypoint != "" {
+		if err := os.WriteFile(filepath.Join(tmpDir, "entrypoint.sh"), []byte(entrypoint), 0o755); err != nil {
+			cleanup()
+			return "", nil, err
+		}
+	}
+	if err := cache.CopyDir(serverDir, filepath.Join(tmpDir, "data")); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+
+	return tmpDir, cleanup, nil
+}
+
+func (b *Builder) buildWithBuildKit(ctx context.Context, buildDir, imageTag, serverName, cacheKey string) error {
+	ctxMount, err := fsutil.NewFS(buildDir)
+	if err != nil {
+		return fmt.Errorf("creating build context mount: %w", err)
+	}
+
+	pipeR, pipeW := io.Pipe()
+	ch := make(chan *bkclient.SolveStatus)
+	eg, ctx := errgroup.WithContext(ctx)
+
+	eg.Go(func() error {
+		defer func() { _ = pipeW.Close() }()
+		_, err := b.bk.Solve(ctx, nil, bkclient.SolveOpt{
+			Frontend: "dockerfile.v0",
+			FrontendAttrs: map[string]string{
+				"filename": "Dockerfile",
+			},
+			LocalMounts: map[string]fsutil.FS{
+				"context":    ctxMount,
+				"dockerfile": ctxMount,
+			},
+			Exports: []bkclient.ExportEntry{{
+				Type:  bkclient.ExporterDocker,
+				Attrs: map[string]string{"name": imageTag},
+				Output: func(_ map[string]string) (io.WriteCloser, error) {
+					return pipeW, nil
+				},
+			}},
+		}, ch)
+		return err
+	})
+
+	eg.Go(func() error {
+		var buildOut io.Writer
+		if b.workDir != nil {
+			logFile, logErr := b.workDir.CreateBuildLog(serverName, cacheKey)
+			if logErr == nil {
+				defer func() { _ = logFile.Close() }()
+				buildOut = logFile
+			}
+		}
+		for status := range ch {
+			if buildOut != nil {
+				for _, log := range status.Logs {
+					_, _ = buildOut.Write(log.Data)
+				}
+			}
+		}
+		return nil
+	})
+
+	eg.Go(func() error {
+		resp, err := b.docker.ImageLoad(ctx, pipeR)
+		if err != nil {
+			return fmt.Errorf("loading image into docker: %w", err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return nil
+	})
+
+	if err := eg.Wait(); err != nil {
+		return fmt.Errorf("docker build failed: %w", err)
+	}
+	return nil
 }
 
 type fetchResult struct {
@@ -277,83 +363,4 @@ func (b *Builder) imageExists(ctx context.Context, tag string) bool {
 		return false
 	}
 	return len(images) > 0
-}
-
-func createBuildContext(binaryData []byte, binaryName string, binaryMode int64, serverDir, dockerfile, entrypoint string) (io.Reader, error) {
-	buf := new(bytes.Buffer)
-	tw := tar.NewWriter(buf)
-
-	if err := addToTar(tw, "Dockerfile", []byte(dockerfile), 0o644); err != nil {
-		return nil, err
-	}
-
-	if err := addToTar(tw, binaryName, binaryData, binaryMode); err != nil {
-		return nil, err
-	}
-
-	if entrypoint != "" {
-		if err := addToTar(tw, "entrypoint.sh", []byte(entrypoint), 0o755); err != nil {
-			return nil, err
-		}
-	}
-
-	if err := addDirectoryToTar(tw, serverDir, "data"); err != nil {
-		return nil, err
-	}
-
-	if err := tw.Close(); err != nil {
-		return nil, err
-	}
-
-	return buf, nil
-}
-
-func addToTar(tw *tar.Writer, name string, data []byte, mode int64) error {
-	header := &tar.Header{
-		Name: name,
-		Size: int64(len(data)),
-		Mode: mode,
-	}
-	if err := tw.WriteHeader(header); err != nil {
-		return err
-	}
-	_, err := tw.Write(data)
-	return err
-}
-
-func addDirectoryToTar(tw *tar.Writer, srcDir, prefix string) error {
-	return filepath.Walk(srcDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if strings.HasPrefix(info.Name(), ".") {
-			if info.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		rel, err := filepath.Rel(srcDir, path)
-		if err != nil {
-			return err
-		}
-
-		tarPath := filepath.Join(prefix, rel)
-
-		if info.IsDir() {
-			return tw.WriteHeader(&tar.Header{
-				Name:     tarPath + "/",
-				Mode:     0o755,
-				Typeflag: tar.TypeDir,
-			})
-		}
-
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-
-		return addToTar(tw, tarPath, data, 0o644)
-	})
 }

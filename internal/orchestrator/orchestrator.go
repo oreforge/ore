@@ -115,7 +115,7 @@ func (o *Orchestrator) Up(ctx context.Context, cfg *spec.NetworkSpec, images map
 
 		tag := res.ImageTag
 		if tag == "" {
-			tag = fmt.Sprintf("ore/%s:latest", srv.Name)
+			return nil, fmt.Errorf("no image tag for server %s", srv.Name)
 		}
 
 		configHash := spec.ServerConfigHash(&srv, tag)
@@ -259,6 +259,16 @@ func (o *Orchestrator) PruneImages(ctx context.Context, cfg *spec.NetworkSpec) e
 						o.logger.Warn("failed to remove image", "tag", tag, "error", err)
 					}
 				}
+			}
+		}
+	}
+
+	for _, img := range images {
+		if len(img.RepoTags) == 0 && len(img.RepoDigests) == 0 {
+			shortID := img.ID[:min(19, len(img.ID))]
+			o.logger.Info("removing dangling image", "id", shortID)
+			if _, err := o.docker.ImageRemove(ctx, img.ID, image.RemoveOptions{}); err != nil {
+				o.logger.Debug("failed to remove dangling image", "id", shortID, "error", err)
 			}
 		}
 	}

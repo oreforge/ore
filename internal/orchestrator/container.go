@@ -251,11 +251,10 @@ func StopAllOreContainers(ctx context.Context, client docker.Client, networkName
 	}
 
 	for _, c := range containers {
-		if len(c.Names) == 0 {
-			logger.Warn("container has no names, skipping", "id", c.ID)
-			continue
+		name := c.ID
+		if len(c.Names) > 0 {
+			name = strings.TrimPrefix(c.Names[0], "/")
 		}
-		name := strings.TrimPrefix(c.Names[0], "/")
 		if err := stopAndRemove(ctx, client, name, logger); err != nil {
 			logger.Warn("failed to stop orphaned container", "name", name, "error", err)
 		}

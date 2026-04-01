@@ -5,21 +5,21 @@ import (
 	"io"
 
 	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/build"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/volume"
 	dockerclient "github.com/docker/docker/client"
+	"github.com/docker/docker/client/buildkit"
+	bkclient "github.com/moby/buildkit/client"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 type Client interface {
-	ImageBuild(ctx context.Context, buildContext io.Reader, options build.ImageBuildOptions) (build.ImageBuildResponse, error)
-	ImageTag(ctx context.Context, source, target string) error
 	ImageList(ctx context.Context, options image.ListOptions) ([]image.Summary, error)
 	ImagePull(ctx context.Context, refStr string, options image.PullOptions) (io.ReadCloser, error)
 	ImageRemove(ctx context.Context, imageID string, options image.RemoveOptions) ([]image.DeleteResponse, error)
+	ImageLoad(ctx context.Context, input io.Reader, opts ...dockerclient.ImageLoadOption) (image.LoadResponse, error)
 
 	ContainerCreate(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error)
 	ContainerStart(ctx context.Context, containerID string, options container.StartOptions) error
@@ -42,7 +42,7 @@ type Client interface {
 	Close() error
 }
 
-func New(ctx context.Context) (Client, error) {
+func New(ctx context.Context) (*dockerclient.Client, error) {
 	cli, err := dockerclient.NewClientWithOpts(
 		dockerclient.FromEnv,
 		dockerclient.WithAPIVersionNegotiation(),
@@ -57,4 +57,8 @@ func New(ctx context.Context) (Client, error) {
 	}
 
 	return cli, nil
+}
+
+func NewBuildKitClient(ctx context.Context, dockerCli *dockerclient.Client) (*bkclient.Client, error) {
+	return bkclient.New(ctx, "", buildkit.ClientOpts(dockerCli)...)
 }
