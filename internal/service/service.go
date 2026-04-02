@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -49,13 +47,17 @@ func Run(_ []string, info BuildInfo) int {
 	}
 	defer func() { _ = dockerClient.Close() }()
 
-	router := newRouter(cfg, logger, level, dockerClient)
+	pm := engine.NewProjectManager(cfg.Projects, cfg.BindMounts, logger)
+
+	router := newRouter(pm, cfg.Token, logger, level, dockerClient)
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           router,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+
+	pm.StartPolling()
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -84,36 +86,12 @@ func Run(_ []string, info BuildInfo) int {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	pm.StopPolling()
+
 	if err := srv.Shutdown(ctx); err != nil {
 		logger.Error("shutdown error", "error", err)
 	}
 
-	shutdownProjects(ctx, cfg, logger)
+	pm.Shutdown(ctx)
 	return 0
-}
-
-func shutdownProjects(ctx context.Context, cfg *config.OredConfig, logger *slog.Logger) {
-	entries, err := os.ReadDir(cfg.Projects)
-	if err != nil {
-		logger.Error("failed to read projects directory", "error", err)
-		return
-	}
-
-	for _, e := range entries {
-		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
-			continue
-		}
-		specPath := filepath.Join(cfg.Projects, e.Name(), "ore.yaml")
-		if _, statErr := os.Stat(specPath); statErr != nil {
-			continue
-		}
-
-		logger.Info("stopping project", "project", e.Name())
-		eng := engine.NewLocal(logger, specPath, engine.WithBindMounts(cfg.BindMounts))
-		err := eng.Down(ctx)
-		_ = eng.Close()
-		if err != nil {
-			logger.Error("failed to stop project", "project", e.Name(), "error", err)
-		}
-	}
 }

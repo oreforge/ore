@@ -82,7 +82,7 @@ ore servers show <name>       Show server details
 ore projects list             List remote projects
 ore projects add <url>        Clone a project from a git repository
 ore projects remove <name>    Remove a project
-ore projects update <name>    Pull latest changes
+ore projects update <name>    Pull latest changes and redeploy
 ore projects use <name>       Set the active project
 ore projects active           Show the active project
 ore version                   Print version info
@@ -94,6 +94,11 @@ Global flags: `-f <path>` spec file (default `ore.yaml`), `-v` verbose logging.
 
 ```yaml
 network: string             # Docker network name
+
+gitops:                     # GitOps configuration (optional)
+  poll:
+    enabled: bool           # enable periodic git polling (default: false)
+    interval: duration      # poll interval, e.g. 5m, 1h (default: 5m)
 
 servers:
   - name: string            # container name
@@ -183,6 +188,24 @@ ore console lobby
 ```
 
 Multiple servers can be configured and switched between. Each server remembers its active project independently.
+
+## GitOps
+
+ore supports automatic deployments via polling, configured per project in `ore.yaml`.
+
+Enable polling to have ored periodically check for new commits:
+
+```yaml
+network: mynetwork
+gitops:
+  poll:
+    enabled: true
+    interval: 5m
+servers:
+  - ...
+```
+
+On startup, ored scans all projects and starts a polling goroutine for each project with polling enabled. When new commits are detected, it pulls and redeploys automatically.
 
 ## Configuration
 

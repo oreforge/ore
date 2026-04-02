@@ -10,7 +10,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5/middleware"
 
-	"github.com/oreforge/ore/internal/config"
+	"github.com/oreforge/ore/internal/engine"
 	"github.com/oreforge/ore/internal/handler"
 )
 
@@ -50,7 +50,7 @@ func bearerAuth(token string) func(http.Handler) http.Handler {
 	}
 }
 
-func projectResolver(cfg *config.OredConfig) func(http.Handler) http.Handler {
+func projectResolver(pm *engine.ProjectManager) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			project := r.Header.Get("X-Ore-Project")
@@ -59,14 +59,12 @@ func projectResolver(cfg *config.OredConfig) func(http.Handler) http.Handler {
 				return
 			}
 
-			specPath, err := handler.ResolveProject(cfg, project)
-			if err != nil {
+			if _, err := pm.ResolveSpec(project); err != nil {
 				handler.WriteError(w, http.StatusNotFound, err.Error())
 				return
 			}
 
-			ctx := handler.WithSpecPath(r.Context(), specPath)
-			next.ServeHTTP(w, r.WithContext(ctx))
+			next.ServeHTTP(w, r)
 		})
 	}
 }

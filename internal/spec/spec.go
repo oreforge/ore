@@ -1,9 +1,21 @@
 package spec
 
+import "time"
+
 type NetworkSpec struct {
 	Network  string        `yaml:"network"`
+	GitOps   *GitOpsSpec   `yaml:"gitops,omitempty"`
 	Servers  []ServerSpec  `yaml:"servers"`
 	Services []ServiceSpec `yaml:"services,omitempty"`
+}
+
+type GitOpsSpec struct {
+	Poll GitOpsPoll `yaml:"poll,omitempty"`
+}
+
+type GitOpsPoll struct {
+	Enabled  bool          `yaml:"enabled,omitempty"`
+	Interval time.Duration `yaml:"interval,omitempty"`
 }
 
 type ServerSpec struct {

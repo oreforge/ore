@@ -8,12 +8,12 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	"github.com/oreforge/ore/internal/config"
 	"github.com/oreforge/ore/internal/docker"
+	"github.com/oreforge/ore/internal/engine"
 	"github.com/oreforge/ore/internal/handler"
 )
 
-func newRouter(cfg *config.OredConfig, logger *slog.Logger, logLevel slog.Level, dockerClient docker.Client) *chi.Mux {
+func newRouter(pm *engine.ProjectManager, token string, logger *slog.Logger, logLevel slog.Level, dockerClient docker.Client) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RealIP)
@@ -26,7 +26,7 @@ func newRouter(cfg *config.OredConfig, logger *slog.Logger, logLevel slog.Level,
 		humaConfig.Info.Description = "OreForge daemon REST API for managing game server networks"
 		humaConfig.Servers = []*huma.Server{{URL: "/api"}}
 
-		if cfg.Token != "" {
+		if token != "" {
 			humaConfig.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
 				"bearerAuth": {
 					Type:         "http",
@@ -42,17 +42,17 @@ func newRouter(cfg *config.OredConfig, logger *slog.Logger, logLevel slog.Level,
 
 		api := humachi.New(r, humaConfig)
 
-		if cfg.Token != "" {
-			api.UseMiddleware(humaBearerAuth(api, cfg.Token))
+		if token != "" {
+			api.UseMiddleware(humaBearerAuth(api, token))
 		}
 
-		handler.RegisterRoutes(api, cfg, logLevel)
+		handler.RegisterRoutes(api, pm, logLevel)
 
 		r.Group(func(r chi.Router) {
-			if cfg.Token != "" {
-				r.Use(bearerAuth(cfg.Token))
+			if token != "" {
+				r.Use(bearerAuth(token))
 			}
-			r.Use(projectResolver(cfg))
+			r.Use(projectResolver(pm))
 			r.Get("/console", handler.Console(dockerClient))
 		})
 	})

@@ -12,7 +12,6 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/oreforge/ore/internal/config"
 	"github.com/oreforge/ore/internal/engine"
 )
 
@@ -35,11 +34,12 @@ type ProjectPathInput struct {
 
 type UpdateProjectOutput struct {
 	Body struct {
-		Name string `json:"name" doc:"Project name"`
+		Name   string `json:"name" doc:"Project name"`
+		Status string `json:"status" doc:"Update result"`
 	}
 }
 
-func addProject(cfg *config.OredConfig) func(context.Context, *AddProjectInput) (*AddProjectOutput, error) {
+func addProject(pm *engine.ProjectManager) func(context.Context, *AddProjectInput) (*AddProjectOutput, error) {
 	return func(ctx context.Context, input *AddProjectInput) (*AddProjectOutput, error) {
 		name := input.Body.Name
 		if name == "" {
@@ -54,7 +54,7 @@ func addProject(cfg *config.OredConfig) func(context.Context, *AddProjectInput) 
 			return nil, huma.Error400BadRequest("invalid project name")
 		}
 
-		projectDir := filepath.Join(cfg.Projects, name)
+		projectDir := filepath.Join(pm.ProjectsDir(), name)
 		if _, err := os.Stat(projectDir); err == nil {
 			return nil, huma.Error409Conflict("project " + name + " already exists")
 		}
@@ -77,18 +77,15 @@ func addProject(cfg *config.OredConfig) func(context.Context, *AddProjectInput) 
 	}
 }
 
-func removeProject(cfg *config.OredConfig) func(context.Context, *ProjectPathInput) (*struct{}, error) {
+func removeProject(pm *engine.ProjectManager) func(context.Context, *ProjectPathInput) (*struct{}, error) {
 	return func(ctx context.Context, input *ProjectPathInput) (*struct{}, error) {
-		specPath, err := resolveProjectInput(cfg, input.Name)
-		if err != nil {
-			return nil, err
+		if _, err := pm.ResolveSpec(input.Name); err != nil {
+			return nil, huma.Error404NotFound(err.Error())
 		}
 
-		eng := engine.NewLocal(slog.Default(), specPath, engine.WithBindMounts(cfg.BindMounts))
-		_ = eng.Down(ctx)
-		_ = eng.Close()
+		_ = pm.Down(ctx, input.Name, slog.Default())
 
-		projectDir := filepath.Join(cfg.Projects, input.Name)
+		projectDir := filepath.Join(pm.ProjectsDir(), input.Name)
 		if err := os.RemoveAll(projectDir); err != nil {
 			return nil, huma.Error500InternalServerError("removing project: " + err.Error())
 		}
@@ -97,26 +94,20 @@ func removeProject(cfg *config.OredConfig) func(context.Context, *ProjectPathInp
 	}
 }
 
-func updateProject(cfg *config.OredConfig) func(context.Context, *ProjectPathInput) (*UpdateProjectOutput, error) {
+func updateProject(pm *engine.ProjectManager) func(context.Context, *ProjectPathInput) (*UpdateProjectOutput, error) {
 	return func(ctx context.Context, input *ProjectPathInput) (*UpdateProjectOutput, error) {
-		if _, err := resolveProjectInput(cfg, input.Name); err != nil {
-			return nil, err
+		if _, err := pm.ResolveSpec(input.Name); err != nil {
+			return nil, huma.Error404NotFound(err.Error())
 		}
 
-		projectDir := filepath.Join(cfg.Projects, input.Name)
-		gitDir := filepath.Join(projectDir, ".git")
-		if _, err := os.Stat(gitDir); err != nil {
-			return nil, huma.Error400BadRequest("project " + input.Name + " is not a git repository")
-		}
-
-		cmd := exec.CommandContext(ctx, "git", "-C", projectDir, "pull")
-		if output, err := cmd.CombinedOutput(); err != nil {
-			return nil, huma.Error500InternalServerError("git pull failed: " + strings.TrimSpace(string(output)))
+		if err := pm.Deploy(ctx, input.Name); err != nil {
+			return nil, huma.Error500InternalServerError(err.Error())
 		}
 
 		return &UpdateProjectOutput{Body: struct {
-			Name string `json:"name" doc:"Project name"`
-		}{Name: input.Name}}, nil
+			Name   string `json:"name" doc:"Project name"`
+			Status string `json:"status" doc:"Update result"`
+		}{Name: input.Name, Status: "deployed"}}, nil
 	}
 }
 

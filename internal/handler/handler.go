@@ -5,12 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
-	"path/filepath"
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/oreforge/ore/internal/config"
 	"github.com/oreforge/ore/internal/engine"
 	"github.com/oreforge/ore/internal/orchestrator"
 )
@@ -66,54 +63,49 @@ type CleanInput struct {
 	}
 }
 
-func RegisterRoutes(api huma.API, cfg *config.OredConfig, logLevel slog.Level) {
+func RegisterRoutes(api huma.API, pm *engine.ProjectManager, logLevel slog.Level) {
 	ndjsonDesc := "Streams progress as NDJSON (application/x-ndjson). Final line contains {\"done\":true} with an optional \"error\" field."
 
 	huma.Register(api, huma.Operation{
 		OperationID: "list-projects",
 		Summary:     "List available projects",
-		Description: "Returns the names of all projects that contain an ore.yaml file.",
 		Method:      http.MethodGet,
 		Path:        "/projects",
 		Tags:        []string{"Projects"},
-	}, listProjects(cfg))
+	}, listProjects(pm))
 
 	huma.Register(api, huma.Operation{
 		OperationID: "add-project",
 		Summary:     "Clone a project from a git repository",
-		Description: "Clones the repository into the projects directory. The project name is derived from the URL unless explicitly provided.",
 		Method:      http.MethodPost,
 		Path:        "/projects",
 		Tags:        []string{"Projects"},
-	}, addProject(cfg))
+	}, addProject(pm))
 
 	huma.Register(api, huma.Operation{
 		OperationID:   "remove-project",
 		Summary:       "Stop containers and remove a project",
-		Description:   "Stops all running containers for the project, then deletes the project directory.",
 		Method:        http.MethodDelete,
 		Path:          "/projects/{name}",
 		Tags:          []string{"Projects"},
 		DefaultStatus: http.StatusNoContent,
-	}, removeProject(cfg))
+	}, removeProject(pm))
 
 	huma.Register(api, huma.Operation{
 		OperationID: "update-project",
-		Summary:     "Pull latest changes from git",
-		Description: "Runs git pull in the project directory to fetch the latest changes.",
+		Summary:     "Pull latest changes and redeploy",
 		Method:      http.MethodPatch,
 		Path:        "/projects/{name}",
 		Tags:        []string{"Projects"},
-	}, updateProject(cfg))
+	}, updateProject(pm))
 
 	huma.Register(api, huma.Operation{
 		OperationID: "get-status",
 		Summary:     "Get network and container status",
-		Description: "Returns the current state of all containers in the network, including health, ports, uptime, and resource limits.",
 		Method:      http.MethodGet,
 		Path:        "/status",
 		Tags:        []string{"Operations"},
-	}, getStatus(cfg))
+	}, getStatus(pm))
 
 	huma.Register(api, huma.Operation{
 		OperationID: "up",
@@ -122,7 +114,7 @@ func RegisterRoutes(api huma.API, cfg *config.OredConfig, logLevel slog.Level) {
 		Method:      http.MethodPost,
 		Path:        "/up",
 		Tags:        []string{"Operations"},
-	}, up(cfg, logLevel))
+	}, up(pm, logLevel))
 
 	huma.Register(api, huma.Operation{
 		OperationID: "down",
@@ -131,7 +123,7 @@ func RegisterRoutes(api huma.API, cfg *config.OredConfig, logLevel slog.Level) {
 		Method:      http.MethodPost,
 		Path:        "/down",
 		Tags:        []string{"Operations"},
-	}, down(cfg, logLevel))
+	}, down(pm, logLevel))
 
 	huma.Register(api, huma.Operation{
 		OperationID: "build",
@@ -140,7 +132,7 @@ func RegisterRoutes(api huma.API, cfg *config.OredConfig, logLevel slog.Level) {
 		Method:      http.MethodPost,
 		Path:        "/build",
 		Tags:        []string{"Operations"},
-	}, build(cfg, logLevel))
+	}, build(pm, logLevel))
 
 	huma.Register(api, huma.Operation{
 		OperationID: "prune",
@@ -149,7 +141,7 @@ func RegisterRoutes(api huma.API, cfg *config.OredConfig, logLevel slog.Level) {
 		Method:      http.MethodPost,
 		Path:        "/prune",
 		Tags:        []string{"Operations"},
-	}, prune(cfg, logLevel))
+	}, prune(pm, logLevel))
 
 	huma.Register(api, huma.Operation{
 		OperationID: "clean",
@@ -158,26 +150,7 @@ func RegisterRoutes(api huma.API, cfg *config.OredConfig, logLevel slog.Level) {
 		Method:      http.MethodPost,
 		Path:        "/clean",
 		Tags:        []string{"Operations"},
-	}, clean(cfg, logLevel))
-}
-
-func ResolveProject(cfg *config.OredConfig, project string) (string, error) {
-	if filepath.Base(project) != project {
-		return "", fmt.Errorf("invalid project name")
-	}
-	specPath := filepath.Join(cfg.Projects, project, "ore.yaml")
-	if _, err := os.Stat(specPath); err != nil {
-		return "", fmt.Errorf("project %q not found", project)
-	}
-	return specPath, nil
-}
-
-func resolveProjectInput(cfg *config.OredConfig, project string) (string, error) {
-	specPath, err := ResolveProject(cfg, project)
-	if err != nil {
-		return "", huma.Error404NotFound(err.Error())
-	}
-	return specPath, nil
+	}, clean(pm, logLevel))
 }
 
 func WriteError(w http.ResponseWriter, status int, msg string) {
@@ -186,23 +159,14 @@ func WriteError(w http.ResponseWriter, status int, msg string) {
 	_, _ = fmt.Fprintf(w, `{"status":%d,"detail":%q}`, status, msg)
 }
 
-func listProjects(cfg *config.OredConfig) func(context.Context, *struct{}) (*ProjectsOutput, error) {
+func listProjects(pm *engine.ProjectManager) func(context.Context, *struct{}) (*ProjectsOutput, error) {
 	return func(_ context.Context, _ *struct{}) (*ProjectsOutput, error) {
-		entries, err := os.ReadDir(cfg.Projects)
+		names, err := pm.ListProjects()
 		if err != nil {
-			return nil, huma.Error500InternalServerError("reading projects directory: " + err.Error())
+			return nil, huma.Error500InternalServerError(err.Error())
 		}
-
 		out := &ProjectsOutput{}
-		for _, e := range entries {
-			if !e.IsDir() || e.Name()[0] == '.' {
-				continue
-			}
-			specFile := filepath.Join(cfg.Projects, e.Name(), "ore.yaml")
-			if _, statErr := os.Stat(specFile); statErr == nil {
-				out.Body.Projects = append(out.Body.Projects, e.Name())
-			}
-		}
+		out.Body.Projects = names
 		return out, nil
 	}
 }

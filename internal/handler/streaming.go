@@ -8,76 +8,70 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/oreforge/ore/internal/config"
 	"github.com/oreforge/ore/internal/engine"
 )
 
-func up(cfg *config.OredConfig, logLevel slog.Level) func(context.Context, *UpInput) (*huma.StreamResponse, error) {
+func up(pm *engine.ProjectManager, logLevel slog.Level) func(context.Context, *UpInput) (*huma.StreamResponse, error) {
 	return func(ctx context.Context, input *UpInput) (*huma.StreamResponse, error) {
-		specPath, err := resolveProjectInput(cfg, input.Project)
-		if err != nil {
-			return nil, err
+		if _, err := pm.ResolveSpec(input.Project); err != nil {
+			return nil, huma.Error404NotFound(err.Error())
 		}
-		return newStreamResponse(cfg, specPath, logLevel, func(eng *engine.Local) error {
-			return eng.Up(ctx, engine.UpOptions{
+		return newStreamResponse(logLevel, func(logger *slog.Logger) error {
+			return pm.Up(ctx, input.Project, engine.UpOptions{
 				NoCache: input.Body.NoCache,
 				Force:   input.Body.Force,
-			})
+			}, logger)
 		}), nil
 	}
 }
 
-func down(cfg *config.OredConfig, logLevel slog.Level) func(context.Context, *DownInput) (*huma.StreamResponse, error) {
+func down(pm *engine.ProjectManager, logLevel slog.Level) func(context.Context, *DownInput) (*huma.StreamResponse, error) {
 	return func(ctx context.Context, input *DownInput) (*huma.StreamResponse, error) {
-		specPath, err := resolveProjectInput(cfg, input.Project)
-		if err != nil {
-			return nil, err
+		if _, err := pm.ResolveSpec(input.Project); err != nil {
+			return nil, huma.Error404NotFound(err.Error())
 		}
-		return newStreamResponse(cfg, specPath, logLevel, func(eng *engine.Local) error {
-			return eng.Down(ctx)
+		return newStreamResponse(logLevel, func(logger *slog.Logger) error {
+			return pm.Down(ctx, input.Project, logger)
 		}), nil
 	}
 }
 
-func build(cfg *config.OredConfig, logLevel slog.Level) func(context.Context, *BuildInput) (*huma.StreamResponse, error) {
+func build(pm *engine.ProjectManager, logLevel slog.Level) func(context.Context, *BuildInput) (*huma.StreamResponse, error) {
 	return func(ctx context.Context, input *BuildInput) (*huma.StreamResponse, error) {
-		specPath, err := resolveProjectInput(cfg, input.Project)
-		if err != nil {
-			return nil, err
+		if _, err := pm.ResolveSpec(input.Project); err != nil {
+			return nil, huma.Error404NotFound(err.Error())
 		}
-		return newStreamResponse(cfg, specPath, logLevel, func(eng *engine.Local) error {
-			return eng.Build(ctx, input.Body.NoCache)
+		return newStreamResponse(logLevel, func(logger *slog.Logger) error {
+			return pm.Build(ctx, input.Project, input.Body.NoCache, logger)
 		}), nil
 	}
 }
 
-func prune(cfg *config.OredConfig, logLevel slog.Level) func(context.Context, *PruneInput) (*huma.StreamResponse, error) {
+func prune(pm *engine.ProjectManager, logLevel slog.Level) func(context.Context, *PruneInput) (*huma.StreamResponse, error) {
 	return func(ctx context.Context, input *PruneInput) (*huma.StreamResponse, error) {
-		specPath, err := resolveProjectInput(cfg, input.Project)
-		if err != nil {
-			return nil, err
+		if _, err := pm.ResolveSpec(input.Project); err != nil {
+			return nil, huma.Error404NotFound(err.Error())
 		}
 		target := pruneTargetToEngine(input.Body.Target)
-		return newStreamResponse(cfg, specPath, logLevel, func(eng *engine.Local) error {
-			return eng.Prune(ctx, target)
+		return newStreamResponse(logLevel, func(logger *slog.Logger) error {
+			return pm.Prune(ctx, input.Project, target, logger)
 		}), nil
 	}
 }
 
-func clean(cfg *config.OredConfig, logLevel slog.Level) func(context.Context, *CleanInput) (*huma.StreamResponse, error) {
+func clean(pm *engine.ProjectManager, logLevel slog.Level) func(context.Context, *CleanInput) (*huma.StreamResponse, error) {
 	return func(ctx context.Context, input *CleanInput) (*huma.StreamResponse, error) {
-		specPath, err := resolveProjectInput(cfg, input.Project)
-		if err != nil {
-			return nil, err
+		if _, err := pm.ResolveSpec(input.Project); err != nil {
+			return nil, huma.Error404NotFound(err.Error())
 		}
 		target := cleanTargetToEngine(input.Body.Target)
-		return newStreamResponse(cfg, specPath, logLevel, func(eng *engine.Local) error {
-			return eng.Clean(ctx, target)
+		return newStreamResponse(logLevel, func(logger *slog.Logger) error {
+			return pm.Clean(ctx, input.Project, target, logger)
 		}), nil
 	}
 }
 
-func newStreamResponse(cfg *config.OredConfig, specPath string, logLevel slog.Level, fn func(*engine.Local) error) *huma.StreamResponse {
+func newStreamResponse(logLevel slog.Level, fn func(*slog.Logger) error) *huma.StreamResponse {
 	return &huma.StreamResponse{
 		Body: func(ctx huma.Context) {
 			ctx.SetHeader("Content-Type", "application/x-ndjson")
@@ -91,9 +85,7 @@ func newStreamResponse(cfg *config.OredConfig, specPath string, logLevel slog.Le
 			serverHandler := slog.Default().Handler()
 			logger := slog.New(newTeeHandler(ndjson, serverHandler))
 
-			eng := engine.NewLocal(logger, specPath, engine.WithBindMounts(cfg.BindMounts))
-
-			opErr := fn(eng)
+			opErr := fn(logger)
 
 			result := map[string]any{"done": true}
 			if opErr != nil {
