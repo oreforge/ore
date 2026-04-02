@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/oreforge/ore/internal/client"
 	"github.com/oreforge/ore/internal/config"
-	"github.com/oreforge/ore/internal/engine"
 )
 
 type BuildInfo struct {
@@ -18,8 +18,11 @@ type BuildInfo struct {
 }
 
 var (
-	eng engine.Engine
-	cfg *config.OreConfig
+	localMode    bool
+	specPath     string
+	remoteClient *client.Client
+	cfg          *config.OreConfig
+	logger       *slog.Logger
 )
 
 func Run(args []string, info BuildInfo) int {
@@ -38,7 +41,7 @@ func Run(args []string, info BuildInfo) int {
 			if cfg.Verbose {
 				level = slog.LevelDebug
 			}
-			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+			logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 			slog.SetDefault(logger)
 
 			if cmd.Annotations["skip-engine"] == "true" {
@@ -47,10 +50,11 @@ func Run(args []string, info BuildInfo) int {
 
 			specFile, _ := cmd.Flags().GetString("file")
 			if _, statErr := os.Stat(specFile); statErr == nil {
-				eng = engine.NewLocal(logger, specFile)
+				localMode = true
+				specPath = specFile
 			} else if addr, token, project, ok := config.ResolveRemote(cfg); ok {
 				var remoteErr error
-				eng, remoteErr = engine.NewRemote(addr, token, project)
+				remoteClient, remoteErr = client.New(addr, token, project)
 				if remoteErr != nil {
 					return fmt.Errorf("connecting to ored: %w", remoteErr)
 				}
@@ -89,8 +93,8 @@ func Run(args []string, info BuildInfo) int {
 
 	root.SetArgs(args[1:])
 	err = root.Execute()
-	if eng != nil {
-		_ = eng.Close()
+	if remoteClient != nil {
+		_ = remoteClient.Close()
 	}
 	if err != nil {
 		slog.Error("command failed", "error", err)

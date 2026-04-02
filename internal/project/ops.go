@@ -1,0 +1,268 @@
+package project
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"path/filepath"
+
+	"github.com/oreforge/ore/internal/build"
+	"github.com/oreforge/ore/internal/deploy"
+	"github.com/oreforge/ore/internal/docker"
+	"github.com/oreforge/ore/internal/software/providers"
+	"github.com/oreforge/ore/internal/spec"
+)
+
+type PruneTarget int
+
+const (
+	PruneAll PruneTarget = iota
+	PruneContainers
+	PruneImages
+	PruneVolumes
+)
+
+type CleanTarget int
+
+const (
+	CleanAll CleanTarget = iota
+	CleanCache
+	CleanBuilds
+)
+
+type UpOptions struct {
+	NoCache bool
+	Force   bool
+}
+
+type buildResult struct {
+	images  map[string]build.Result
+	spec    *spec.Network
+	docker  docker.Client
+	workDir *build.WorkDir
+}
+
+func (m *Manager) doBuild(ctx context.Context, specPath string, opts build.Options, logger *slog.Logger) (*buildResult, error) {
+	s, err := spec.Load(specPath)
+	if err != nil {
+		return nil, err
+	}
+
+	dockerClient, err := docker.New(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("connecting to Docker: %w", err)
+	}
+
+	bk, err := docker.NewBuildKitClient(ctx, dockerClient)
+	if err != nil {
+		_ = dockerClient.Close()
+		return nil, fmt.Errorf("connecting to BuildKit: %w", err)
+	}
+	defer func() { _ = bk.Close() }()
+
+	repoRoot := filepath.Dir(specPath)
+	wd, err := build.NewWorkDir(repoRoot, logger)
+	if err != nil {
+		_ = dockerClient.Close()
+		return nil, fmt.Errorf("initializing .ore directory: %w", err)
+	}
+
+	builder := build.NewBuilder(dockerClient, bk, providers.New(), logger, wd, opts)
+	images, err := builder.BuildAll(ctx, s, repoRoot)
+	if err != nil {
+		_ = dockerClient.Close()
+		return nil, err
+	}
+
+	for name, res := range images {
+		logger.Info("built image", "server", name, "tag", res.ImageTag)
+	}
+
+	return &buildResult{
+		images:  images,
+		spec:    s,
+		docker:  dockerClient,
+		workDir: wd,
+	}, nil
+}
+
+func (m *Manager) Up(ctx context.Context, name string, opts UpOptions, logger *slog.Logger) error {
+	specPath, err := m.Resolve(name)
+	if err != nil {
+		return err
+	}
+
+	br, err := m.doBuild(ctx, specPath, build.Options{NoCache: opts.NoCache}, logger)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = br.docker.Close() }()
+
+	var prevState *deploy.DeployState
+	if !opts.Force && br.workDir != nil {
+		prevState = deploy.LoadState(br.workDir.Root())
+	}
+
+	orch := deploy.New(br.docker, logger, br.workDir, m.bindMounts)
+	newState, err := orch.Up(ctx, br.spec, br.images, deploy.UpOptions{
+		PrevState: prevState,
+		Force:     opts.Force,
+	})
+	if err != nil {
+		return err
+	}
+
+	if br.workDir != nil && newState != nil {
+		if saveErr := deploy.SaveState(br.workDir.Root(), newState); saveErr != nil {
+			logger.Warn("failed to save deploy state", "error", saveErr)
+		}
+	}
+
+	return nil
+}
+
+func (m *Manager) Down(ctx context.Context, name string, logger *slog.Logger) error {
+	specPath, err := m.Resolve(name)
+	if err != nil {
+		return err
+	}
+
+	s, err := spec.Load(specPath)
+	if err != nil {
+		return err
+	}
+
+	dockerClient, err := docker.New(ctx)
+	if err != nil {
+		return fmt.Errorf("connecting to Docker: %w", err)
+	}
+	defer func() { _ = dockerClient.Close() }()
+
+	orch := deploy.New(dockerClient, logger, nil, m.bindMounts)
+	return orch.Down(ctx, s)
+}
+
+func (m *Manager) Build(ctx context.Context, name string, noCache bool, logger *slog.Logger) error {
+	specPath, err := m.Resolve(name)
+	if err != nil {
+		return err
+	}
+
+	br, err := m.doBuild(ctx, specPath, build.Options{NoCache: noCache, ForceBuild: true}, logger)
+	if err != nil {
+		return err
+	}
+	_ = br.docker.Close()
+	return nil
+}
+
+func (m *Manager) Status(ctx context.Context, name string) (*deploy.NetworkStatus, error) {
+	specPath, err := m.Resolve(name)
+	if err != nil {
+		return nil, err
+	}
+
+	s, err := spec.Load(specPath)
+	if err != nil {
+		return nil, err
+	}
+
+	dockerClient, err := docker.New(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("connecting to Docker: %w", err)
+	}
+	defer func() { _ = dockerClient.Close() }()
+
+	orch := deploy.New(dockerClient, m.logger, nil, m.bindMounts)
+	return orch.Status(ctx, s)
+}
+
+func (m *Manager) Prune(ctx context.Context, name string, target PruneTarget, logger *slog.Logger) error {
+	specPath, err := m.Resolve(name)
+	if err != nil {
+		return err
+	}
+
+	s, err := spec.Load(specPath)
+	if err != nil {
+		return err
+	}
+
+	dockerClient, err := docker.New(ctx)
+	if err != nil {
+		return fmt.Errorf("connecting to Docker: %w", err)
+	}
+	defer func() { _ = dockerClient.Close() }()
+
+	orch := deploy.New(dockerClient, logger, nil, m.bindMounts)
+
+	switch target {
+	case PruneAll:
+		var errs []error
+		if err := orch.Down(ctx, s); err != nil {
+			errs = append(errs, fmt.Errorf("stopping containers: %w", err))
+		}
+		if err := orch.PruneImages(ctx, s); err != nil {
+			errs = append(errs, fmt.Errorf("pruning images: %w", err))
+		}
+		if err := orch.PruneVolumes(ctx, s); err != nil {
+			errs = append(errs, fmt.Errorf("pruning volumes: %w", err))
+		}
+		repoRoot := filepath.Dir(specPath)
+		if wd, wdErr := build.NewWorkDir(repoRoot, logger); wdErr == nil {
+			if cleanErr := wd.Clean(); cleanErr != nil {
+				errs = append(errs, fmt.Errorf("cleaning .ore directory: %w", cleanErr))
+			}
+		}
+		logger.Info("pruned all resources")
+		return errors.Join(errs...)
+	case PruneContainers:
+		return orch.Down(ctx, s)
+	case PruneImages:
+		return orch.PruneImages(ctx, s)
+	case PruneVolumes:
+		return orch.PruneVolumes(ctx, s)
+	default:
+		return fmt.Errorf("unknown prune target: %d", target)
+	}
+}
+
+func (m *Manager) Clean(_ context.Context, name string, target CleanTarget, logger *slog.Logger) error {
+	specPath, err := m.Resolve(name)
+	if err != nil {
+		return err
+	}
+
+	repoRoot := filepath.Dir(specPath)
+	wd, err := build.NewWorkDir(repoRoot, logger)
+	if err != nil {
+		return fmt.Errorf("opening .ore directory: %w", err)
+	}
+
+	switch target {
+	case CleanAll:
+		return wd.Clean()
+	case CleanCache:
+		return wd.CleanCache()
+	case CleanBuilds:
+		return wd.CleanBuilds()
+	default:
+		return fmt.Errorf("unknown clean target: %d", target)
+	}
+}
+
+func (m *Manager) Deploy(ctx context.Context, name string) error {
+	m.logger.Info("deploying project", "project", name)
+
+	if err := m.Pull(ctx, name); err != nil {
+		return fmt.Errorf("pulling %s: %w", name, err)
+	}
+
+	if err := m.Up(ctx, name, UpOptions{}, m.logger); err != nil {
+		return fmt.Errorf("deploying %s: %w", name, err)
+	}
+
+	m.logger.Info("deploy complete", "project", name)
+	return nil
+}

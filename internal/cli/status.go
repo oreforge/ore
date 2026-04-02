@@ -10,7 +10,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/oreforge/ore/internal/orchestrator"
+	"github.com/oreforge/ore/internal/deploy"
+	"github.com/oreforge/ore/internal/docker"
+	"github.com/oreforge/ore/internal/spec"
 )
 
 func newStatusCmd() *cobra.Command {
@@ -20,7 +22,27 @@ func newStatusCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			jsonOut, _ := cmd.Flags().GetBool("json")
 
-			status, err := eng.Status(cmd.Context())
+			var (
+				status *deploy.NetworkStatus
+				err    error
+			)
+			if localMode {
+				s, loadErr := spec.Load(specPath)
+				if loadErr != nil {
+					return loadErr
+				}
+
+				dockerClient, dockerErr := docker.New(cmd.Context())
+				if dockerErr != nil {
+					return fmt.Errorf("connecting to Docker: %w", dockerErr)
+				}
+				defer func() { _ = dockerClient.Close() }()
+
+				orch := deploy.New(dockerClient, logger, nil, true)
+				status, err = orch.Status(cmd.Context(), s)
+			} else {
+				status, err = remoteClient.Status(cmd.Context())
+			}
 			if err != nil {
 				return err
 			}
@@ -37,13 +59,13 @@ func newStatusCmd() *cobra.Command {
 	return cmd
 }
 
-func printJSON(status *orchestrator.NetworkStatus) error {
+func printJSON(status *deploy.NetworkStatus) error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(status)
 }
 
-func printTable(status *orchestrator.NetworkStatus) error {
+func printTable(status *deploy.NetworkStatus) error {
 	fmt.Printf("Network: %s\n\n", status.Network)
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)

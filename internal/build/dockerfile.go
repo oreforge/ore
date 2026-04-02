@@ -3,18 +3,17 @@ package build
 import (
 	"fmt"
 
-	"github.com/oreforge/ore/internal/resolver/runtimes"
+	"github.com/oreforge/ore/internal/software"
 )
 
 type DockerfileOptions struct {
-	Runtime       runtimes.Runtime
+	Runtime       software.Runtime
 	ExtraArgs     string
 	HealthRetries int
 }
 
 func GenerateDockerfile(opts DockerfileOptions) string {
-	entrypoint := opts.Runtime.Entrypoint()
-	if entrypoint != "" {
+	if opts.Runtime.Entrypoint != "" {
 		return generateEntrypointDockerfile(opts)
 	}
 	return generateDirectDockerfile(opts)
@@ -35,7 +34,7 @@ WORKDIR /data
 EXPOSE 25565
 %s
 ENTRYPOINT ["tini", "--", "/opt/ore/entrypoint.sh"]%s
-`, opts.Runtime.BaseImage(), opts.Runtime.BinaryName(), opts.Runtime.BinaryName(),
+`, opts.Runtime.BaseImage, opts.Runtime.BinaryName, opts.Runtime.BinaryName,
 		dockerHealthcheck(opts.HealthRetries), cmdLine)
 }
 
@@ -48,8 +47,8 @@ WORKDIR /data
 EXPOSE 25565
 %s
 ENTRYPOINT ["tini", "--", "/opt/ore/%s"]
-`, opts.Runtime.BaseImage(), opts.Runtime.BinaryName(), opts.Runtime.BinaryName(),
-		dockerHealthcheck(opts.HealthRetries), opts.Runtime.BinaryName())
+`, opts.Runtime.BaseImage, opts.Runtime.BinaryName, opts.Runtime.BinaryName,
+		dockerHealthcheck(opts.HealthRetries), opts.Runtime.BinaryName)
 }
 
 func dockerHealthcheck(retries int) string {

@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/oreforge/ore/internal/client"
 	"github.com/oreforge/ore/internal/config"
-	"github.com/oreforge/ore/internal/engine"
 )
 
 func newProjectsCmd() *cobra.Command {
@@ -27,12 +27,11 @@ func newProjectsCmd() *cobra.Command {
 	return cmd
 }
 
-func remoteEngine() (*engine.Remote, error) {
-	r, ok := eng.(*engine.Remote)
-	if !ok {
+func requireRemote() (*client.Client, error) {
+	if remoteClient == nil {
 		return nil, fmt.Errorf("project management is only available in remote mode")
 	}
-	return r, nil
+	return remoteClient, nil
 }
 
 func newProjectsListCmd() *cobra.Command {
@@ -40,7 +39,7 @@ func newProjectsListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List available projects",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			r, err := remoteEngine()
+			r, err := requireRemote()
 			if err != nil {
 				return err
 			}
@@ -70,7 +69,7 @@ func newProjectsAddCmd() *cobra.Command {
 		Short: "Clone a project from a git repository",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			r, err := remoteEngine()
+			r, err := requireRemote()
 			if err != nil {
 				return err
 			}
@@ -97,7 +96,7 @@ func newProjectsRemoveCmd() *cobra.Command {
 		Short: "Stop containers and remove a project",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			r, err := remoteEngine()
+			r, err := requireRemote()
 			if err != nil {
 				return err
 			}
@@ -118,16 +117,17 @@ func newProjectsUpdateCmd() *cobra.Command {
 		Short: "Pull latest changes from git",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			r, err := remoteEngine()
+			r, err := requireRemote()
 			if err != nil {
 				return err
 			}
 
-			if err := r.UpdateProject(cmd.Context(), args[0]); err != nil {
+			status, err := r.UpdateProject(cmd.Context(), args[0])
+			if err != nil {
 				return err
 			}
 
-			fmt.Printf("updated project %q\n", args[0])
+			fmt.Printf("updated project %q: %s\n", args[0], status)
 			return nil
 		},
 	}

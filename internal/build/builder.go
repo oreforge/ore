@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -20,12 +21,12 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 
-	"github.com/oreforge/ore/internal/cache"
 	"github.com/oreforge/ore/internal/docker"
-	"github.com/oreforge/ore/internal/resolver"
-	"github.com/oreforge/ore/internal/resolver/providers"
+	"github.com/oreforge/ore/internal/software"
 	"github.com/oreforge/ore/internal/spec"
 )
+
+var httpClient = &http.Client{Timeout: 60 * time.Second}
 
 type Options struct {
 	NoCache    bool
@@ -41,25 +42,25 @@ type Result struct {
 type Builder struct {
 	docker    docker.Client
 	bk        *bkclient.Client
-	registry  *providers.Registry
+	resolver  *software.Resolver
 	logger    *slog.Logger
-	workDir   *cache.Manager
+	workDir   *WorkDir
 	opts      Options
 	fetchOnce singleflight.Group
 }
 
-func NewBuilder(dockerClient docker.Client, bk *bkclient.Client, registry *providers.Registry, logger *slog.Logger, workDir *cache.Manager, opts Options) *Builder {
+func NewBuilder(dockerClient docker.Client, bk *bkclient.Client, resolver *software.Resolver, logger *slog.Logger, workDir *WorkDir, opts Options) *Builder {
 	return &Builder{
 		docker:   dockerClient,
 		bk:       bk,
-		registry: registry,
+		resolver: resolver,
 		logger:   logger,
 		workDir:  workDir,
 		opts:     opts,
 	}
 }
 
-func (b *Builder) BuildAll(ctx context.Context, cfg *spec.NetworkSpec, repoRoot string) (map[string]Result, error) {
+func (b *Builder) BuildAll(ctx context.Context, cfg *spec.Network, repoRoot string) (map[string]Result, error) {
 	var mu sync.Mutex
 	images := make(map[string]Result, len(cfg.Servers))
 
@@ -92,30 +93,25 @@ func (b *Builder) BuildAll(ctx context.Context, cfg *spec.NetworkSpec, repoRoot 
 	return images, nil
 }
 
-func (b *Builder) Build(ctx context.Context, srv *spec.ServerSpec, repoRoot string) (Result, error) {
+func (b *Builder) Build(ctx context.Context, srv *spec.Server, repoRoot string) (Result, error) {
 	startedAt := time.Now()
 
 	b.logger.Info("resolving software", "server", srv.Name, "software", srv.Software)
 
-	platform, err := b.platform(ctx)
-	if err != nil {
-		return Result{}, fmt.Errorf("detecting docker platform: %w", err)
-	}
-
-	artifact, err := b.registry.Resolve(ctx, srv.Software, platform)
+	artifact, err := b.resolver.Resolve(ctx, srv.Software)
 	if err != nil {
 		return Result{}, fmt.Errorf("resolving software: %w", err)
 	}
 
 	serverDir := filepath.Join(repoRoot, srv.Dir)
 
-	cacheKey, err := CacheKey(srv.Software, artifact.BuildID, serverDir)
+	cacheKey, err := CacheKey(srv.Software, artifact.Version, serverDir)
 	if err != nil {
 		return Result{}, fmt.Errorf("computing cache key: %w", err)
 	}
 
 	imageTag := fmt.Sprintf("ore/%s:%s", srv.Name, cacheKey)
-	result := Result{ImageTag: imageTag, HealthTimeout: artifact.HealthTimeout}
+	result := Result{ImageTag: imageTag, HealthTimeout: artifact.Health.Timeout}
 
 	if !b.opts.ForceBuild && b.imageExists(ctx, imageTag) {
 		b.logger.Info("image cached, skipping build", "server", srv.Name, "tag", imageTag)
@@ -131,19 +127,15 @@ func (b *Builder) Build(ctx context.Context, srv *spec.ServerSpec, repoRoot stri
 		return Result{}, err
 	}
 
-	if artifact.Runtime == nil {
-		return Result{}, fmt.Errorf("artifact for %s has no runtime configured", srv.Software)
-	}
-
 	dfOpts := DockerfileOptions{
 		Runtime:       artifact.Runtime,
-		ExtraArgs:     artifact.ExtraArgs,
-		HealthRetries: artifact.HealthRetries,
+		ExtraArgs:     artifact.Runtime.ExtraArgs,
+		HealthRetries: artifact.Health.Retries,
 	}
 	dockerfile := GenerateDockerfile(dfOpts)
-	entrypoint := artifact.Runtime.Entrypoint()
-	binaryName := artifact.Runtime.BinaryName()
-	binaryMode := os.FileMode(artifact.Runtime.BinaryMode())
+	entrypoint := artifact.Runtime.Entrypoint
+	binaryName := artifact.Runtime.BinaryName
+	binaryMode := os.FileMode(artifact.Runtime.BinaryMode)
 
 	buildDir, cleanup, err := b.prepareBuildDir(srv.Name, cacheKey, serverDir, dockerfile, entrypoint, binaryName, binaryData, binaryMode)
 	if err != nil {
@@ -163,13 +155,13 @@ func (b *Builder) Build(ctx context.Context, srv *spec.ServerSpec, repoRoot stri
 	b.logger.Info("image built", "server", srv.Name, "tag", imageTag, "duration", duration)
 
 	if b.workDir != nil {
-		meta := cache.BuildMetadata{
+		meta := BuildMetadata{
 			ServerName:   srv.Name,
 			SoftwareID:   srv.Software,
 			ArtifactURL:  artifact.URL,
 			ImageTag:     imageTag,
 			CacheKey:     cacheKey,
-			Runtime:      artifact.Runtime.Name(),
+			Runtime:      srv.Software,
 			BinaryCached: cached,
 			StartedAt:    startedAt,
 			DurationMs:   duration.Milliseconds(),
@@ -223,7 +215,7 @@ func (b *Builder) prepareBuildDir(serverName, cacheKey, serverDir, dockerfile, e
 			return "", nil, err
 		}
 	}
-	if err := cache.CopyDir(serverDir, filepath.Join(tmpDir, "data")); err != nil {
+	if err := copyDir(serverDir, filepath.Join(tmpDir, "data")); err != nil {
 		cleanup()
 		return "", nil, err
 	}
@@ -303,7 +295,7 @@ type fetchResult struct {
 	hash string
 }
 
-func (b *Builder) fetchBinary(ctx context.Context, srv *spec.ServerSpec, artifact *resolver.Artifact) ([]byte, bool, error) {
+func (b *Builder) fetchBinary(ctx context.Context, srv *spec.Server, artifact *software.Artifact) ([]byte, bool, error) {
 	if !b.opts.NoCache && b.workDir != nil && artifact.SHA256 != "" && b.workDir.HasBinary(artifact.SHA256) {
 		b.logger.Info("using cached binary", "server", srv.Name, "sha256", artifact.SHA256[:12])
 		data, err := b.workDir.ReadBinary(artifact.SHA256)
@@ -315,7 +307,7 @@ func (b *Builder) fetchBinary(ctx context.Context, srv *spec.ServerSpec, artifac
 
 	b.logger.Info("downloading binary", "server", srv.Name, "url", artifact.URL)
 	result, err, _ := b.fetchOnce.Do(artifact.URL, func() (any, error) {
-		data, dlErr := resolver.GetRaw(ctx, artifact.URL)
+		data, dlErr := httpGet(ctx, artifact.URL)
 		if dlErr != nil {
 			return nil, fmt.Errorf("downloading binary: %w", dlErr)
 		}
@@ -347,12 +339,24 @@ func (b *Builder) fetchBinary(ctx context.Context, srv *spec.ServerSpec, artifac
 	return fr.data, false, nil
 }
 
-func (b *Builder) platform(ctx context.Context) (resolver.Platform, error) {
-	ver, err := b.docker.ServerVersion(ctx)
+func httpGet(ctx context.Context, url string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return resolver.Platform{}, err
+		return nil, err
 	}
-	return resolver.Platform{OS: ver.Os, Arch: ver.Arch}, nil
+	req.Header.Set("User-Agent", "oreforge/ore")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %d from %s", resp.StatusCode, url)
+	}
+
+	return io.ReadAll(resp.Body)
 }
 
 func (b *Builder) imageExists(ctx context.Context, tag string) bool {
