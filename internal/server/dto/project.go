@@ -12,8 +12,3 @@ type ProjectResponse struct {
 type ProjectListResponse struct {
 	Projects []string `json:"projects"`
 }
-
-type UpdateProjectResponse struct {
-	Name   string `json:"name" example:"mynetwork"`
-	Status string `json:"status" example:"deployed"`
-}

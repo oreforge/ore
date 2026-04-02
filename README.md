@@ -66,7 +66,7 @@ ore down           # stop everything
 ## Commands
 
 ```
-ore up [--no-cache]           Build images and start the network
+ore up [--no-cache] [--force]  Build images and start the network
 ore down                      Stop all containers and remove the network
 ore build [--no-cache]        Build Docker images without starting
 ore status [--json]           Show server status
@@ -74,7 +74,7 @@ ore console <server>          Attach to a server console
 ore prune <target>            Remove resources (all, containers, images, volumes)
 ore clean [--cache|--builds]  Remove .ore/ cache and build artifacts
 ore servers list              List configured servers
-ore servers add <name>        Add a remote server (--addr, --token required)
+ore servers add <name>        Add a remote server (--addr, --token required, --project optional)
 ore servers remove <name>     Remove a remote server
 ore servers use <name>        Set the active server
 ore servers active            Show the active server

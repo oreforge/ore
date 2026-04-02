@@ -122,12 +122,11 @@ func newProjectsUpdateCmd() *cobra.Command {
 				return err
 			}
 
-			status, err := r.UpdateProject(cmd.Context(), args[0])
-			if err != nil {
+			if err := r.UpdateProject(cmd.Context(), args[0]); err != nil {
 				return err
 			}
 
-			fmt.Printf("updated project %q: %s\n", args[0], status)
+			fmt.Printf("updated project %q\n", args[0])
 			return nil
 		},
 	}

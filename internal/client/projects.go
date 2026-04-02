@@ -55,29 +55,8 @@ func (c *Client) RemoveProject(ctx context.Context, name string) error {
 	return nil
 }
 
-func (c *Client) UpdateProject(ctx context.Context, name string) (string, error) {
-	req, err := c.newRequest(ctx, "PATCH", "/api/projects/"+url.PathEscape(name), nil)
-	if err != nil {
-		return "", err
-	}
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("update project request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != 200 {
-		return "", c.readError(resp)
-	}
-
-	var result struct {
-		Status string `json:"status"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("decoding response: %w", err)
-	}
-	return result.Status, nil
+func (c *Client) UpdateProject(ctx context.Context, name string) error {
+	return c.streamRequest(ctx, "PATCH", "/api/projects/"+url.PathEscape(name), nil)
 }
 
 func (c *Client) ListProjects(ctx context.Context) ([]string, error) {

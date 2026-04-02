@@ -9,6 +9,7 @@ import (
 
 func (m *Manager) StartPolling() {
 	ctx, cancel := context.WithCancel(context.Background())
+	m.pollCtx = ctx
 	m.pollCancel = cancel
 
 	names, err := m.List()
@@ -18,26 +19,7 @@ func (m *Manager) StartPolling() {
 	}
 
 	for _, name := range names {
-		specPath, err := m.Resolve(name)
-		if err != nil {
-			continue
-		}
-		s, err := spec.Load(specPath)
-		if err != nil {
-			m.logger.Warn("failed to load spec for polling", "project", name, "error", err)
-			continue
-		}
-		if s.GitOps == nil || !s.GitOps.Poll.Enabled {
-			continue
-		}
-
-		interval := s.GitOps.Poll.Interval
-		if interval <= 0 {
-			interval = defaultPollInterval
-		}
-
-		m.pollWg.Add(1)
-		go m.poll(ctx, name, interval)
+		m.startProjectPoll(name)
 	}
 }
 
@@ -45,11 +27,74 @@ func (m *Manager) StopPolling() {
 	if m.pollCancel != nil {
 		m.pollCancel()
 	}
-	m.pollWg.Wait()
+
+	m.pollMu.Lock()
+	entries := make(map[string]pollEntry, len(m.polls))
+	for k, v := range m.polls {
+		entries[k] = v
+	}
+	m.polls = make(map[string]pollEntry)
+	m.pollMu.Unlock()
+
+	for _, e := range entries {
+		<-e.done
+	}
 }
 
-func (m *Manager) poll(ctx context.Context, name string, interval time.Duration) {
-	defer m.pollWg.Done()
+func (m *Manager) RestartProjectPoll(name string) {
+	m.StopProjectPoll(name)
+	m.startProjectPoll(name)
+}
+
+func (m *Manager) startProjectPoll(name string) {
+	if m.pollCtx == nil {
+		return
+	}
+
+	specPath, err := m.Resolve(name)
+	if err != nil {
+		return
+	}
+	s, err := spec.Load(specPath)
+	if err != nil {
+		m.logger.Warn("failed to load spec for polling", "project", name, "error", err)
+		return
+	}
+	if s.GitOps == nil || !s.GitOps.Poll.Enabled {
+		return
+	}
+
+	interval := s.GitOps.Poll.Interval
+	if interval <= 0 {
+		interval = defaultPollInterval
+	}
+
+	ctx, cancel := context.WithCancel(m.pollCtx)
+	done := make(chan struct{})
+
+	m.pollMu.Lock()
+	m.polls[name] = pollEntry{cancel: cancel, done: done}
+	m.pollMu.Unlock()
+
+	go m.poll(ctx, name, interval, done)
+}
+
+func (m *Manager) StopProjectPoll(name string) {
+	m.pollMu.Lock()
+	entry, ok := m.polls[name]
+	if ok {
+		delete(m.polls, name)
+	}
+	m.pollMu.Unlock()
+
+	if ok {
+		entry.cancel()
+		<-entry.done
+	}
+}
+
+func (m *Manager) poll(ctx context.Context, name string, interval time.Duration, done chan struct{}) {
+	defer close(done)
 
 	logger := m.logger.With("project", name)
 	logger.Info("gitops polling started", "interval", interval)
@@ -60,9 +105,13 @@ func (m *Manager) poll(ctx context.Context, name string, interval time.Duration)
 	for {
 		select {
 		case <-ctx.Done():
+			logger.Info("gitops polling stopped")
 			return
 		case <-ticker.C:
 			if err := m.Deploy(ctx, name); err != nil {
+				if ctx.Err() != nil {
+					return
+				}
 				logger.Error("gitops deploy failed", "error", err)
 			}
 		}

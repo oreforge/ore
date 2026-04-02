@@ -14,12 +14,19 @@ import (
 
 const defaultPollInterval = 5 * time.Minute
 
+type pollEntry struct {
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
 type Manager struct {
 	projectsDir string
 	bindMounts  bool
 	logger      *slog.Logger
+	pollCtx     context.Context
 	pollCancel  context.CancelFunc
-	pollWg      sync.WaitGroup
+	pollMu      sync.Mutex
+	polls       map[string]pollEntry
 }
 
 func NewManager(projectsDir string, bindMounts bool, logger *slog.Logger) *Manager {
@@ -27,6 +34,7 @@ func NewManager(projectsDir string, bindMounts bool, logger *slog.Logger) *Manag
 		projectsDir: projectsDir,
 		bindMounts:  bindMounts,
 		logger:      logger,
+		polls:       make(map[string]pollEntry),
 	}
 }
 

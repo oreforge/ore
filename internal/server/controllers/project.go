@@ -57,12 +57,13 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 		option.OperationID("removeProject"),
 		option.Path("name", "Project name"),
 	)
-	fuego.Patch(projects, "/{name}", rs.update,
+	fuego.PatchStd(projects, "/{name}", rs.update,
 		option.Summary("Update a project"),
-		option.Description("Pulls latest changes from git and redeploys the project."),
+		option.OverrideDescription(ndjsonDesc),
 		option.Tags("Projects"),
 		option.OperationID("updateProject"),
 		option.Path("name", "Project name"),
+		option.AddResponse(http.StatusOK, "NDJSON progress stream", fuego.Response{Type: dto.StreamLine{}}),
 	)
 
 	ops := fuego.Group(projects, "/{name}",
@@ -167,6 +168,8 @@ func (rs ProjectResource) add(c fuego.ContextWithBody[dto.AddProjectRequest]) (d
 		return dto.ProjectResponse{}, fuego.HTTPError{Status: 422, Detail: "repository does not contain an ore.yaml"}
 	}
 
+	rs.PM.RestartProjectPoll(name)
+
 	return dto.ProjectResponse{Name: name}, nil
 }
 
@@ -176,6 +179,7 @@ func (rs ProjectResource) remove(c fuego.ContextNoBody) (any, error) {
 		return nil, fuego.HTTPError{Status: 404, Detail: err.Error()}
 	}
 
+	rs.PM.StopProjectPoll(name)
 	_ = rs.PM.Down(c.Context(), name, slog.Default())
 
 	projectDir := filepath.Join(rs.PM.ProjectsDir(), name)
@@ -187,17 +191,24 @@ func (rs ProjectResource) remove(c fuego.ContextNoBody) (any, error) {
 	return nil, nil
 }
 
-func (rs ProjectResource) update(c fuego.ContextNoBody) (dto.UpdateProjectResponse, error) {
-	name := c.PathParam("name")
+func (rs ProjectResource) update(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
 	if _, err := rs.PM.Resolve(name); err != nil {
-		return dto.UpdateProjectResponse{}, fuego.HTTPError{Status: 404, Detail: err.Error()}
+		errs.Write(w, http.StatusNotFound, err.Error())
+		return
 	}
 
-	if err := rs.PM.Deploy(c.Context(), name); err != nil {
-		return dto.UpdateProjectResponse{}, fuego.HTTPError{Status: 500, Detail: err.Error()}
-	}
-
-	return dto.UpdateProjectResponse{Name: name, Status: "deployed"}, nil
+	streamOperation(w, rs.LogLevel, func(logger *slog.Logger) error {
+		if err := rs.PM.Pull(r.Context(), name); err != nil {
+			return fmt.Errorf("pulling %s: %w", name, err)
+		}
+		logger.Info("pulled latest changes", "project", name)
+		if err := rs.PM.Up(r.Context(), name, project.UpOptions{}, logger); err != nil {
+			return err
+		}
+		rs.PM.RestartProjectPoll(name)
+		return nil
+	})
 }
 
 func (rs ProjectResource) resolveProject(r *http.Request) (string, error) {
