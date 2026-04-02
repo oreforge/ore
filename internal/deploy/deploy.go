@@ -7,10 +7,12 @@ import (
 	"log/slog"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/oreforge/ore/internal/build"
 	"github.com/oreforge/ore/internal/docker"
@@ -102,6 +104,16 @@ func (d *Deployer) Up(ctx context.Context, cfg *spec.Network, images map[string]
 		}
 	}
 
+	type serverResult struct {
+		name       string
+		imageTag   string
+		configHash string
+	}
+
+	var mu sync.Mutex
+	var serverResults []serverResult
+
+	g, gCtx := errgroup.WithContext(ctx)
 	for _, srv := range cfg.Servers {
 		var res build.Result
 		if images != nil {
@@ -123,33 +135,51 @@ func (d *Deployer) Up(ctx context.Context, cfg *spec.Network, images map[string]
 		prev := opts.prevServer(srv.Name)
 		if d.unchanged(ctx, name, tag, prev.ImageTag, configHash, prev.ConfigHash, opts) {
 			d.logger.Info("server unchanged, skipping", "server", name)
-		} else {
-			if err := EnsureVolumes(ctx, d.docker, &srv, cfg.Network, d.logger); err != nil {
-				return nil, fmt.Errorf("ensuring volumes for %s: %w", srv.Name, err)
+			mu.Lock()
+			serverResults = append(serverResults, serverResult{srv.Name, tag, configHash})
+			mu.Unlock()
+			continue
+		}
+
+		healthTimeout := res.HealthTimeout
+		if healthTimeout == 0 {
+			healthTimeout = 3 * time.Minute
+		}
+
+		g.Go(func() error {
+			if err := EnsureVolumes(gCtx, d.docker, &srv, cfg.Network, d.logger); err != nil {
+				return fmt.Errorf("ensuring volumes for %s: %w", srv.Name, err)
 			}
 
 			dataBind := d.resolveDataBind(tag, srv.Name)
 
-			if err := StartContainer(ctx, d.docker, &srv, name, tag, cfg.Network, dataBind, d.logger); err != nil {
-				return nil, fmt.Errorf("starting %s: %w", name, err)
+			if err := StartContainer(gCtx, d.docker, &srv, name, tag, cfg.Network, dataBind, d.logger); err != nil {
+				return fmt.Errorf("starting %s: %w", name, err)
 			}
 
-			if err := WaitForRunning(ctx, d.docker, name, 10*time.Second); err != nil {
-				return nil, fmt.Errorf("container %s failed to start: %w", name, err)
+			if err := WaitForRunning(gCtx, d.docker, name, 10*time.Second); err != nil {
+				return fmt.Errorf("container %s failed to start: %w", name, err)
 			}
 
-			healthTimeout := res.HealthTimeout
-			if healthTimeout == 0 {
-				healthTimeout = 3 * time.Minute
-			}
-			if err := WaitForHealthy(ctx, d.docker, name, healthTimeout, d.logger); err != nil {
+			if err := WaitForHealthy(gCtx, d.docker, name, healthTimeout, d.logger); err != nil {
 				d.logger.Warn("health check failed", "container", name, "error", err)
 			}
-		}
 
-		newState.Servers[srv.Name] = ServerState{
-			ImageTag:   tag,
-			ConfigHash: configHash,
+			mu.Lock()
+			serverResults = append(serverResults, serverResult{srv.Name, tag, configHash})
+			mu.Unlock()
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
+	for _, r := range serverResults {
+		newState.Servers[r.name] = ServerState{
+			ImageTag:   r.imageTag,
+			ConfigHash: r.configHash,
 		}
 	}
 
