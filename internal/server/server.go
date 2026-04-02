@@ -27,7 +27,7 @@ type BuildInfo struct {
 
 func New(pm *project.Manager, token string, logger *slog.Logger, logLevel slog.Level, dockerClient docker.Client, addr string, version string) *fuego.Server {
 	if strings.HasPrefix(addr, ":") {
-		addr = "localhost" + addr
+		addr = "0.0.0.0" + addr
 	}
 
 	serverOpts := []fuego.ServerOption{
