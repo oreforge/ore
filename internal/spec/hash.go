@@ -7,7 +7,7 @@ import (
 	"sort"
 )
 
-func ServerConfigHash(srv *ServerSpec, imageTag string) string {
+func ServerHash(srv *Server, imageTag string) string {
 	h := sha256.New()
 	hashField(h, imageTag)
 	hashField(h, srv.Memory)
@@ -19,7 +19,7 @@ func ServerConfigHash(srv *ServerSpec, imageTag string) string {
 	return fmt.Sprintf("%x", h.Sum(nil))[:12]
 }
 
-func ServiceConfigHash(svc *ServiceSpec) string {
+func ServiceHash(svc *Service) string {
 	h := sha256.New()
 	hashField(h, svc.Image)
 	hashList(h, svc.Ports)
@@ -54,7 +54,7 @@ func hashEnv(h hash.Hash, env map[string]string) {
 	h.Write([]byte{1})
 }
 
-func hashVolumes(h hash.Hash, volumes []VolumeSpec) {
+func hashVolumes(h hash.Hash, volumes []Volume) {
 	for _, v := range volumes {
 		h.Write([]byte(v.Name + ":" + v.Target))
 		h.Write([]byte{0})

@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/oreforge/ore/internal/service"
+	"github.com/oreforge/ore/internal/server"
 )
 
 var (
@@ -13,7 +13,7 @@ var (
 )
 
 func main() {
-	os.Exit(service.Run(os.Args, service.BuildInfo{
+	os.Exit(server.Run(os.Args, server.BuildInfo{
 		Version:   version,
 		Commit:    commit,
 		BuildDate: buildDate,

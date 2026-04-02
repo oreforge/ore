@@ -2,14 +2,14 @@ package spec
 
 import "time"
 
-type NetworkSpec struct {
-	Network  string        `yaml:"network"`
-	GitOps   *GitOpsSpec   `yaml:"gitops,omitempty"`
-	Servers  []ServerSpec  `yaml:"servers"`
-	Services []ServiceSpec `yaml:"services,omitempty"`
+type Network struct {
+	Network  string    `yaml:"network"`
+	GitOps   *GitOps   `yaml:"gitops,omitempty"`
+	Servers  []Server  `yaml:"servers"`
+	Services []Service `yaml:"services,omitempty"`
 }
 
-type GitOpsSpec struct {
+type GitOps struct {
 	Poll GitOpsPoll `yaml:"poll,omitempty"`
 }
 
@@ -18,7 +18,7 @@ type GitOpsPoll struct {
 	Interval time.Duration `yaml:"interval,omitempty"`
 }
 
-type ServerSpec struct {
+type Server struct {
 	Name     string            `yaml:"name"`
 	Dir      string            `yaml:"dir"`
 	Software string            `yaml:"software"`
@@ -27,15 +27,15 @@ type ServerSpec struct {
 	CPU      string            `yaml:"cpu,omitempty"`
 	JVMFlags []string          `yaml:"jvmFlags,omitempty"`
 	Env      map[string]string `yaml:"env,omitempty"`
-	Volumes  []VolumeSpec      `yaml:"volumes,omitempty"`
+	Volumes  []Volume          `yaml:"volumes,omitempty"`
 }
 
-type ServiceSpec struct {
+type Service struct {
 	Name    string            `yaml:"name"`
 	Image   string            `yaml:"image"`
 	Ports   []string          `yaml:"ports,omitempty"`
 	Env     map[string]string `yaml:"env,omitempty"`
-	Volumes []VolumeSpec      `yaml:"volumes,omitempty"`
+	Volumes []Volume          `yaml:"volumes,omitempty"`
 }
 
 type PortMapping struct {
@@ -43,7 +43,7 @@ type PortMapping struct {
 	Container int
 }
 
-type VolumeSpec struct {
+type Volume struct {
 	Name   string `yaml:"name"`
 	Target string `yaml:"target"`
 }

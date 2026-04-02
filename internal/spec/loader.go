@@ -10,7 +10,7 @@ import (
 
 var envVarPattern = regexp.MustCompile(`\$\{([^}]+)}`)
 
-func Load(path string) (*NetworkSpec, error) {
+func Load(path string) (*Network, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading spec: %w", err)
@@ -21,7 +21,7 @@ func Load(path string) (*NetworkSpec, error) {
 		return nil, err
 	}
 
-	var s NetworkSpec
+	var s Network
 	if err := yaml.Unmarshal([]byte(expanded), &s); err != nil {
 		return nil, fmt.Errorf("parsing spec: %w", err)
 	}

@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-func Validate(s *NetworkSpec) error {
+func Validate(s *Network) error {
 	if s.Network == "" {
 		return fmt.Errorf("validation: network name is required")
 	}
