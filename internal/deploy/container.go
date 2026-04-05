@@ -46,9 +46,8 @@ func StartContainer(ctx context.Context, client docker.Client, srv *spec.Server,
 		},
 	}
 
-	init := true
 	hostConfig := &container.HostConfig{
-		Init: &init,
+		Init: new(true),
 		RestartPolicy: container.RestartPolicy{
 			Name:              container.RestartPolicyOnFailure,
 			MaximumRetryCount: 3,
@@ -123,9 +122,8 @@ func StartServiceContainer(ctx context.Context, client docker.Client, svc *spec.
 		},
 	}
 
-	init := true
 	hostConfig := &container.HostConfig{
-		Init: &init,
+		Init: new(true),
 		RestartPolicy: container.RestartPolicy{
 			Name:              container.RestartPolicyOnFailure,
 			MaximumRetryCount: 3,
@@ -221,8 +219,7 @@ func StopContainer(ctx context.Context, client docker.Client, containerName stri
 }
 
 func stopAndRemove(ctx context.Context, client docker.Client, name string, logger *slog.Logger) error {
-	timeout := 60
-	stopErr := client.ContainerStop(ctx, name, container.StopOptions{Timeout: &timeout})
+	stopErr := client.ContainerStop(ctx, name, container.StopOptions{Timeout: new(60)})
 	if stopErr != nil && !cerrdefs.IsNotFound(stopErr) {
 		logger.Debug("graceful stop failed, force removing", "name", name, "error", stopErr)
 	}

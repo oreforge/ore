@@ -11,7 +11,7 @@ import (
 
 const ndjsonDesc = "Streams progress as NDJSON (application/x-ndjson). Final line contains {\"done\":true} with an optional \"error\" field."
 
-func streamOperation(w http.ResponseWriter, logLevel slog.Level, fn func(*slog.Logger) error) {
+func streamOperation(w http.ResponseWriter, logLevel slog.Level, serverLogger *slog.Logger, fn func(*slog.Logger) error) {
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -19,8 +19,7 @@ func streamOperation(w http.ResponseWriter, logLevel slog.Level, fn func(*slog.L
 	flusher, _ := w.(http.Flusher)
 
 	ndjson := newNDJSONHandler(w, flusher, logLevel)
-	serverHandler := slog.Default().Handler()
-	logger := slog.New(newTeeHandler(ndjson, serverHandler))
+	logger := slog.New(newTeeHandler(ndjson, serverLogger.Handler()))
 
 	opErr := fn(logger)
 
@@ -119,12 +118,15 @@ func (t *teeHandler) Enabled(ctx context.Context, level slog.Level) bool {
 }
 
 func (t *teeHandler) Handle(ctx context.Context, r slog.Record) error {
+	var first error
 	for _, h := range t.handlers {
 		if h.Enabled(ctx, r.Level) {
-			_ = h.Handle(ctx, r)
+			if err := h.Handle(ctx, r); err != nil && first == nil {
+				first = err
+			}
 		}
 	}
-	return nil
+	return first
 }
 
 func (t *teeHandler) WithAttrs(attrs []slog.Attr) slog.Handler {

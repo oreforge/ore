@@ -14,7 +14,6 @@ func RequestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 			logger.Info("request started",
 				"method", r.Method,
 				"path", r.URL.Path,
-				"query", r.URL.RawQuery,
 				"remote_addr", r.RemoteAddr,
 			)
 

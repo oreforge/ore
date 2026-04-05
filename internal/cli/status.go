@@ -38,8 +38,8 @@ func newStatusCmd() *cobra.Command {
 				}
 				defer func() { _ = dockerClient.Close() }()
 
-				orch := deploy.New(dockerClient, logger, nil, true)
-				status, err = orch.Status(cmd.Context(), s)
+				deployer := deploy.New(dockerClient, logger, nil, true)
+				status, err = deployer.Status(cmd.Context(), s)
 			} else {
 				status, err = remoteClient.Status(cmd.Context())
 			}
@@ -94,8 +94,8 @@ func printTable(status *deploy.NetworkStatus) error {
 
 		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%d\n",
 			c.Name,
-			c.State,
-			c.Health,
+			c.State.String(),
+			c.Health.String(),
 			image,
 			ports,
 			uptime,

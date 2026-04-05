@@ -36,6 +36,34 @@ type UpOptions struct {
 	Force   bool
 }
 
+func (t PruneTarget) String() string {
+	switch t {
+	case PruneAll:
+		return "all"
+	case PruneContainers:
+		return "containers"
+	case PruneImages:
+		return "images"
+	case PruneVolumes:
+		return "volumes"
+	default:
+		return fmt.Sprintf("unknown(%d)", int(t))
+	}
+}
+
+func (t CleanTarget) String() string {
+	switch t {
+	case CleanAll:
+		return "all"
+	case CleanCache:
+		return "cache"
+	case CleanBuilds:
+		return "builds"
+	default:
+		return fmt.Sprintf("unknown(%d)", int(t))
+	}
+}
+
 type buildResult struct {
 	images  map[string]build.Result
 	spec    *spec.Network
@@ -99,13 +127,13 @@ func (m *Manager) Up(ctx context.Context, name string, opts UpOptions, logger *s
 	}
 	defer func() { _ = br.docker.Close() }()
 
-	var prevState *deploy.DeployState
+	var prevState *deploy.State
 	if !opts.Force && br.workDir != nil {
 		prevState = deploy.LoadState(br.workDir.Root())
 	}
 
-	orch := deploy.New(br.docker, logger, br.workDir, m.bindMounts)
-	newState, err := orch.Up(ctx, br.spec, br.images, deploy.UpOptions{
+	deployer := deploy.New(br.docker, logger, br.workDir, m.bindMounts)
+	newState, err := deployer.Up(ctx, br.spec, br.images, deploy.UpOptions{
 		PrevState: prevState,
 		Force:     opts.Force,
 	})
@@ -122,25 +150,41 @@ func (m *Manager) Up(ctx context.Context, name string, opts UpOptions, logger *s
 	return nil
 }
 
-func (m *Manager) Down(ctx context.Context, name string, logger *slog.Logger) error {
+type resolvedProject struct {
+	specPath string
+	spec     *spec.Network
+	deployer *deploy.Deployer
+	docker   docker.Client
+}
+
+func (m *Manager) resolveAndDeploy(ctx context.Context, name string, logger *slog.Logger) (*resolvedProject, error) {
 	specPath, err := m.Resolve(name)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	s, err := spec.Load(specPath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	dockerClient, err := docker.New(ctx)
 	if err != nil {
-		return fmt.Errorf("connecting to Docker: %w", err)
+		return nil, fmt.Errorf("connecting to Docker: %w", err)
 	}
-	defer func() { _ = dockerClient.Close() }()
 
-	orch := deploy.New(dockerClient, logger, nil, m.bindMounts)
-	return orch.Down(ctx, s)
+	deployer := deploy.New(dockerClient, logger, nil, m.bindMounts)
+	return &resolvedProject{specPath: specPath, spec: s, deployer: deployer, docker: dockerClient}, nil
+}
+
+func (m *Manager) Down(ctx context.Context, name string, logger *slog.Logger) error {
+	rp, err := m.resolveAndDeploy(ctx, name, logger)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rp.docker.Close() }()
+
+	return rp.deployer.Down(ctx, rp.spec)
 }
 
 func (m *Manager) Build(ctx context.Context, name string, noCache bool, logger *slog.Logger) error {
@@ -158,58 +202,38 @@ func (m *Manager) Build(ctx context.Context, name string, noCache bool, logger *
 }
 
 func (m *Manager) Status(ctx context.Context, name string) (*deploy.NetworkStatus, error) {
-	specPath, err := m.Resolve(name)
+	rp, err := m.resolveAndDeploy(ctx, name, m.logger)
 	if err != nil {
 		return nil, err
 	}
+	defer func() { _ = rp.docker.Close() }()
 
-	s, err := spec.Load(specPath)
-	if err != nil {
-		return nil, err
-	}
-
-	dockerClient, err := docker.New(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("connecting to Docker: %w", err)
-	}
-	defer func() { _ = dockerClient.Close() }()
-
-	orch := deploy.New(dockerClient, m.logger, nil, m.bindMounts)
-	return orch.Status(ctx, s)
+	return rp.deployer.Status(ctx, rp.spec)
 }
 
 func (m *Manager) Prune(ctx context.Context, name string, target PruneTarget, logger *slog.Logger) error {
-	specPath, err := m.Resolve(name)
+	rp, err := m.resolveAndDeploy(ctx, name, logger)
 	if err != nil {
 		return err
 	}
+	defer func() { _ = rp.docker.Close() }()
 
-	s, err := spec.Load(specPath)
-	if err != nil {
-		return err
-	}
+	return ExecutePrune(ctx, rp.deployer, rp.spec, filepath.Dir(rp.specPath), target, logger)
+}
 
-	dockerClient, err := docker.New(ctx)
-	if err != nil {
-		return fmt.Errorf("connecting to Docker: %w", err)
-	}
-	defer func() { _ = dockerClient.Close() }()
-
-	orch := deploy.New(dockerClient, logger, nil, m.bindMounts)
-
+func ExecutePrune(ctx context.Context, deployer *deploy.Deployer, s *spec.Network, repoRoot string, target PruneTarget, logger *slog.Logger) error {
 	switch target {
 	case PruneAll:
 		var errs []error
-		if err := orch.Down(ctx, s); err != nil {
+		if err := deployer.Down(ctx, s); err != nil {
 			errs = append(errs, fmt.Errorf("stopping containers: %w", err))
 		}
-		if err := orch.PruneImages(ctx, s); err != nil {
+		if err := deployer.PruneImages(ctx, s); err != nil {
 			errs = append(errs, fmt.Errorf("pruning images: %w", err))
 		}
-		if err := orch.PruneVolumes(ctx, s); err != nil {
+		if err := deployer.PruneVolumes(ctx, s); err != nil {
 			errs = append(errs, fmt.Errorf("pruning volumes: %w", err))
 		}
-		repoRoot := filepath.Dir(specPath)
 		if wd, wdErr := build.NewWorkDir(repoRoot, logger); wdErr == nil {
 			if cleanErr := wd.Clean(); cleanErr != nil {
 				errs = append(errs, fmt.Errorf("cleaning .ore directory: %w", cleanErr))
@@ -218,11 +242,11 @@ func (m *Manager) Prune(ctx context.Context, name string, target PruneTarget, lo
 		logger.Info("pruned all resources")
 		return errors.Join(errs...)
 	case PruneContainers:
-		return orch.Down(ctx, s)
+		return deployer.Down(ctx, s)
 	case PruneImages:
-		return orch.PruneImages(ctx, s)
+		return deployer.PruneImages(ctx, s)
 	case PruneVolumes:
-		return orch.PruneVolumes(ctx, s)
+		return deployer.PruneVolumes(ctx, s)
 	default:
 		return fmt.Errorf("unknown prune target: %d", target)
 	}

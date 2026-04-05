@@ -37,17 +37,6 @@ func LoadOred() (*OredConfig, error) {
 		return nil, err
 	}
 
-	if v.GetString("token") == "" {
-		token, err := generateToken()
-		if err != nil {
-			return nil, err
-		}
-		v.Set("token", token)
-		if err := v.WriteConfig(); err != nil {
-			return nil, err
-		}
-	}
-
 	cfg := &OredConfig{}
 	if err := v.Unmarshal(cfg, decodeHook()); err != nil {
 		return nil, err
@@ -60,6 +49,25 @@ func LoadOred() (*OredConfig, error) {
 	return cfg, nil
 }
 
+func EnsureToken(cfg *OredConfig) error {
+	if cfg.Token != "" {
+		return nil
+	}
+	token, err := generateToken()
+	if err != nil {
+		return err
+	}
+	cfg.Token = token
+
+	v := viper.New()
+	v.SetConfigFile(OredConfigFile())
+	if err := v.ReadInConfig(); err != nil {
+		return err
+	}
+	v.Set("token", token)
+	return v.WriteConfig()
+}
+
 func generateToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
@@ -70,14 +78,12 @@ func generateToken() (string, error) {
 
 func readOrCreateConfig(v *viper.Viper, path string) error {
 	if err := v.ReadInConfig(); err != nil {
-		var notFound viper.ConfigFileNotFoundError
-		if !errors.As(err, &notFound) {
+		if _, ok := errors.AsType[viper.ConfigFileNotFoundError](err); !ok {
 			return err
 		}
 		_ = os.MkdirAll(filepath.Dir(path), 0o755)
 		if err := v.SafeWriteConfigAs(path); err != nil {
-			var alreadyExists viper.ConfigFileAlreadyExistsError
-			if !errors.As(err, &alreadyExists) {
+			if _, ok := errors.AsType[viper.ConfigFileAlreadyExistsError](err); !ok {
 				return err
 			}
 		}

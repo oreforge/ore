@@ -36,7 +36,7 @@ func New(dockerClient docker.Client, logger *slog.Logger, workDir *build.WorkDir
 }
 
 type UpOptions struct {
-	PrevState *DeployState
+	PrevState *State
 	Force     bool
 }
 
@@ -54,7 +54,7 @@ func (o UpOptions) prevService(name string) ServiceState {
 	return o.PrevState.Services[name]
 }
 
-func (d *Deployer) Up(ctx context.Context, cfg *spec.Network, images map[string]build.Result, opts UpOptions) (*DeployState, error) {
+func (d *Deployer) Up(ctx context.Context, cfg *spec.Network, images map[string]build.Result, opts UpOptions) (*State, error) {
 	if opts.Force || opts.PrevState == nil {
 		if err := StopAllOreContainers(ctx, d.docker, cfg.Network, d.logger); err != nil {
 			d.logger.Warn("failed to clean orphaned containers", "error", err)
@@ -200,7 +200,7 @@ func (d *Deployer) unchanged(ctx context.Context, containerName, expectedImage, 
 	return info.State.Running && info.Config.Image == expectedImage
 }
 
-func (d *Deployer) stopRemovedContainers(ctx context.Context, cfg *spec.Network, prev *DeployState) {
+func (d *Deployer) stopRemovedContainers(ctx context.Context, cfg *spec.Network, prev *State) {
 	current := make(map[string]bool, len(cfg.Servers)+len(cfg.Services))
 	for _, srv := range cfg.Servers {
 		current[srv.Name] = true
@@ -212,13 +212,17 @@ func (d *Deployer) stopRemovedContainers(ctx context.Context, cfg *spec.Network,
 	for name := range prev.Servers {
 		if !current[name] {
 			d.logger.Info("removing server no longer in spec", "server", name)
-			_ = stopAndRemove(ctx, d.docker, name, d.logger)
+			if err := stopAndRemove(ctx, d.docker, name, d.logger); err != nil {
+				d.logger.Warn("failed to remove orphaned server", "server", name, "error", err)
+			}
 		}
 	}
 	for name := range prev.Services {
 		if !current[name] {
 			d.logger.Info("removing service no longer in spec", "service", name)
-			_ = stopAndRemove(ctx, d.docker, name, d.logger)
+			if err := stopAndRemove(ctx, d.docker, name, d.logger); err != nil {
+				d.logger.Warn("failed to remove orphaned service", "service", name, "error", err)
+			}
 		}
 	}
 }

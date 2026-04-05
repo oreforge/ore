@@ -210,7 +210,7 @@ func (w *WorkDir) CreateBuildLog(serverName, cacheKey string) (io.WriteCloser, e
 	return os.Create(filepath.Join(dir, "build.log"))
 }
 
-func (w *WorkDir) WriteMetadata(serverName, cacheKey string, meta BuildMetadata) error {
+func (w *WorkDir) WriteMetadata(serverName, cacheKey string, meta Metadata) error {
 	dir, err := w.BuildDir(serverName, cacheKey)
 	if err != nil {
 		return err
@@ -225,7 +225,7 @@ func (w *WorkDir) WriteMetadata(serverName, cacheKey string, meta BuildMetadata)
 		return err
 	}
 
-	w.manifest.Builds[serverName+"-"+cacheKey] = BuildEntry{
+	w.manifest.Builds[serverName+"-"+cacheKey] = Entry{
 		ServerName: serverName,
 		ImageTag:   meta.ImageTag,
 		CacheKey:   cacheKey,
@@ -270,7 +270,7 @@ func (w *WorkDir) CleanBuilds() error {
 	if err := os.MkdirAll(filepath.Join(w.root, "builds"), 0o755); err != nil {
 		return err
 	}
-	w.manifest.Builds = make(map[string]BuildEntry)
+	w.manifest.Builds = make(map[string]Entry)
 	return w.SaveManifest()
 }
 

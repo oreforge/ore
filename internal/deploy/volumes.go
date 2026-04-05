@@ -17,54 +17,42 @@ func volumeName(networkName, containerName, volName string) string {
 	return networkName + "_" + containerName + "_" + volName
 }
 
-func EnsureVolumes(ctx context.Context, client docker.Client, srv *spec.Server, networkName string, logger *slog.Logger) error {
-	containerName := ContainerName(srv)
-	for _, vol := range srv.Volumes {
+func ensureVolumes(ctx context.Context, client docker.Client, containerName, networkName string, vols []spec.Volume, logger *slog.Logger) error {
+	for _, vol := range vols {
 		name := volumeName(networkName, containerName, vol.Name)
 		logger.Debug("ensuring volume", "volume", name)
-		_, err := client.VolumeCreate(ctx, volume.CreateOptions{Name: name})
-		if err != nil {
+		if _, err := client.VolumeCreate(ctx, volume.CreateOptions{Name: name}); err != nil {
 			return fmt.Errorf("creating volume %s: %w", name, err)
 		}
 	}
 	return nil
 }
 
+func EnsureVolumes(ctx context.Context, client docker.Client, srv *spec.Server, networkName string, logger *slog.Logger) error {
+	return ensureVolumes(ctx, client, ContainerName(srv), networkName, srv.Volumes, logger)
+}
+
 func EnsureServiceVolumes(ctx context.Context, client docker.Client, svc *spec.Service, networkName string, logger *slog.Logger) error {
-	containerName := ServiceContainerName(svc)
-	for _, vol := range svc.Volumes {
+	return ensureVolumes(ctx, client, ServiceContainerName(svc), networkName, svc.Volumes, logger)
+}
+
+func removeVolumes(ctx context.Context, client docker.Client, containerName, networkName string, vols []spec.Volume, logger *slog.Logger) error {
+	for _, vol := range vols {
 		name := volumeName(networkName, containerName, vol.Name)
-		logger.Debug("ensuring volume", "volume", name)
-		_, err := client.VolumeCreate(ctx, volume.CreateOptions{Name: name})
-		if err != nil {
-			return fmt.Errorf("creating volume %s: %w", name, err)
+		logger.Info("removing volume", "volume", name)
+		if err := client.VolumeRemove(ctx, name, true); err != nil {
+			return fmt.Errorf("removing volume %s: %w", name, err)
 		}
 	}
 	return nil
 }
 
 func RemoveVolumes(ctx context.Context, client docker.Client, srv *spec.Server, networkName string, logger *slog.Logger) error {
-	containerName := ContainerName(srv)
-	for _, vol := range srv.Volumes {
-		name := volumeName(networkName, containerName, vol.Name)
-		logger.Info("removing volume", "volume", name)
-		if err := client.VolumeRemove(ctx, name, true); err != nil {
-			return fmt.Errorf("removing volume %s: %w", name, err)
-		}
-	}
-	return nil
+	return removeVolumes(ctx, client, ContainerName(srv), networkName, srv.Volumes, logger)
 }
 
 func RemoveServiceVolumes(ctx context.Context, client docker.Client, svc *spec.Service, networkName string, logger *slog.Logger) error {
-	containerName := ServiceContainerName(svc)
-	for _, vol := range svc.Volumes {
-		name := volumeName(networkName, containerName, vol.Name)
-		logger.Info("removing volume", "volume", name)
-		if err := client.VolumeRemove(ctx, name, true); err != nil {
-			return fmt.Errorf("removing volume %s: %w", name, err)
-		}
-	}
-	return nil
+	return removeVolumes(ctx, client, ServiceContainerName(svc), networkName, svc.Volumes, logger)
 }
 
 func parseMemory(mem string) (int64, error) {

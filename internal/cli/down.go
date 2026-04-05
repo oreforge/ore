@@ -27,8 +27,8 @@ func newDownCmd() *cobra.Command {
 				}
 				defer func() { _ = dockerClient.Close() }()
 
-				orch := deploy.New(dockerClient, logger, nil, true)
-				return orch.Down(cmd.Context(), s)
+				deployer := deploy.New(dockerClient, logger, nil, true)
+				return deployer.Down(cmd.Context(), s)
 			}
 			return remoteClient.Down(cmd.Context())
 		},

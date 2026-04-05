@@ -13,28 +13,7 @@ import (
 
 	"github.com/oreforge/ore/internal/console"
 	"github.com/oreforge/ore/internal/deploy"
-)
-
-type UpOptions struct {
-	NoCache bool
-	Force   bool
-}
-
-type PruneTarget int
-
-const (
-	PruneAll PruneTarget = iota
-	PruneContainers
-	PruneImages
-	PruneVolumes
-)
-
-type CleanTarget int
-
-const (
-	CleanAll CleanTarget = iota
-	CleanCache
-	CleanBuilds
+	"github.com/oreforge/ore/internal/project"
 )
 
 type Client struct {
@@ -60,7 +39,7 @@ func (c *Client) projectPath() string {
 	return "/api/projects/" + url.PathEscape(c.project)
 }
 
-func (c *Client) Up(ctx context.Context, opts UpOptions) error {
+func (c *Client) Up(ctx context.Context, opts project.UpOptions) error {
 	body, _ := json.Marshal(map[string]any{"no_cache": opts.NoCache, "force": opts.Force})
 	return c.streamRequest(ctx, "POST", c.projectPath()+"/up", body)
 }
@@ -97,21 +76,13 @@ func (c *Client) Status(ctx context.Context) (*deploy.NetworkStatus, error) {
 	return &status, nil
 }
 
-func (c *Client) Prune(ctx context.Context, target PruneTarget) error {
-	t, err := pruneTargetString(target)
-	if err != nil {
-		return err
-	}
-	body, _ := json.Marshal(map[string]any{"target": t})
+func (c *Client) Prune(ctx context.Context, target project.PruneTarget) error {
+	body, _ := json.Marshal(map[string]any{"target": target.String()})
 	return c.streamRequest(ctx, "POST", c.projectPath()+"/prune", body)
 }
 
-func (c *Client) Clean(ctx context.Context, target CleanTarget) error {
-	t, err := cleanTargetString(target)
-	if err != nil {
-		return err
-	}
-	body, _ := json.Marshal(map[string]any{"target": t})
+func (c *Client) Clean(ctx context.Context, target project.CleanTarget) error {
+	body, _ := json.Marshal(map[string]any{"target": target.String()})
 	return c.streamRequest(ctx, "POST", c.projectPath()+"/clean", body)
 }
 
@@ -189,32 +160,4 @@ func (c *Client) readError(resp *http.Response) error {
 		return fmt.Errorf("ored: %s (HTTP %d)", errResp.Detail, resp.StatusCode)
 	}
 	return fmt.Errorf("ored: unexpected status %d", resp.StatusCode)
-}
-
-func pruneTargetString(t PruneTarget) (string, error) {
-	switch t {
-	case PruneAll:
-		return "all", nil
-	case PruneContainers:
-		return "containers", nil
-	case PruneImages:
-		return "images", nil
-	case PruneVolumes:
-		return "volumes", nil
-	default:
-		return "", fmt.Errorf("unknown prune target: %d", t)
-	}
-}
-
-func cleanTargetString(t CleanTarget) (string, error) {
-	switch t {
-	case CleanAll:
-		return "all", nil
-	case CleanCache:
-		return "cache", nil
-	case CleanBuilds:
-		return "builds", nil
-	default:
-		return "", fmt.Errorf("unknown clean target: %d", t)
-	}
 }

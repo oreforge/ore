@@ -49,8 +49,8 @@ const (
 	StateDead
 )
 
-func (s ContainerState) String() string {
-	switch s {
+func (s *ContainerState) String() string {
+	switch *s {
 	case StateNotFound:
 		return "not found"
 	case StateCreated:
@@ -68,7 +68,7 @@ func (s ContainerState) String() string {
 	}
 }
 
-func (s ContainerState) MarshalJSON() ([]byte, error) {
+func (s *ContainerState) MarshalJSON() ([]byte, error) {
 	return []byte(fmt.Sprintf("%q", s.String())), nil
 }
 
@@ -105,8 +105,8 @@ const (
 	HealthUnhealthy
 )
 
-func (h HealthState) String() string {
-	switch h {
+func (h *HealthState) String() string {
+	switch *h {
 	case HealthNone:
 		return "—"
 	case HealthStarting:
@@ -120,7 +120,7 @@ func (h HealthState) String() string {
 	}
 }
 
-func (h HealthState) MarshalJSON() ([]byte, error) {
+func (h *HealthState) MarshalJSON() ([]byte, error) {
 	return []byte(fmt.Sprintf("%q", h.String())), nil
 }
 

@@ -8,7 +8,7 @@ import (
 
 type Manifest struct {
 	Binaries map[string]BinaryEntry `json:"binaries"`
-	Builds   map[string]BuildEntry  `json:"builds"`
+	Builds   map[string]Entry       `json:"builds"`
 }
 
 type BinaryEntry struct {
@@ -20,7 +20,7 @@ type BinaryEntry struct {
 	CachedAt   time.Time `json:"cached_at"`
 }
 
-type BuildEntry struct {
+type Entry struct {
 	ServerName string    `json:"server_name"`
 	ImageTag   string    `json:"image_tag"`
 	CacheKey   string    `json:"cache_key"`
@@ -29,7 +29,7 @@ type BuildEntry struct {
 	DurationMs int64     `json:"duration_ms"`
 }
 
-type BuildMetadata struct {
+type Metadata struct {
 	ServerName   string    `json:"server_name"`
 	SoftwareID   string    `json:"software_id"`
 	ArtifactURL  string    `json:"artifact_url"`
@@ -44,7 +44,7 @@ type BuildMetadata struct {
 func NewManifest() *Manifest {
 	return &Manifest{
 		Binaries: make(map[string]BinaryEntry),
-		Builds:   make(map[string]BuildEntry),
+		Builds:   make(map[string]Entry),
 	}
 }
 
@@ -63,7 +63,7 @@ func LoadManifest(path string) *Manifest {
 		m.Binaries = make(map[string]BinaryEntry)
 	}
 	if m.Builds == nil {
-		m.Builds = make(map[string]BuildEntry)
+		m.Builds = make(map[string]Entry)
 	}
 
 	return &m

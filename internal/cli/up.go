@@ -1,17 +1,11 @@
 package cli
 
 import (
-	"fmt"
-	"path/filepath"
-
 	"github.com/spf13/cobra"
 
 	"github.com/oreforge/ore/internal/build"
-	"github.com/oreforge/ore/internal/client"
 	"github.com/oreforge/ore/internal/deploy"
-	"github.com/oreforge/ore/internal/docker"
-	"github.com/oreforge/ore/internal/software/providers"
-	"github.com/oreforge/ore/internal/spec"
+	"github.com/oreforge/ore/internal/project"
 )
 
 func newUpCmd() *cobra.Command {
@@ -22,46 +16,24 @@ func newUpCmd() *cobra.Command {
 			noCache, _ := cmd.Flags().GetBool("no-cache")
 			force, _ := cmd.Flags().GetBool("force")
 			if localMode {
-				s, err := spec.Load(specPath)
+				be, cleanup, err := newBuildEnv(cmd.Context(), build.Options{NoCache: noCache})
+				if err != nil {
+					return err
+				}
+				defer cleanup()
+
+				images, err := be.buildAll(cmd.Context())
 				if err != nil {
 					return err
 				}
 
-				dockerClient, err := docker.New(cmd.Context())
-				if err != nil {
-					return fmt.Errorf("connecting to Docker: %w", err)
-				}
-				defer func() { _ = dockerClient.Close() }()
-
-				bk, err := docker.NewBuildKitClient(cmd.Context(), dockerClient)
-				if err != nil {
-					return fmt.Errorf("connecting to BuildKit: %w", err)
-				}
-				defer func() { _ = bk.Close() }()
-
-				repoRoot := filepath.Dir(specPath)
-				wd, err := build.NewWorkDir(repoRoot, logger)
-				if err != nil {
-					return fmt.Errorf("initializing .ore directory: %w", err)
+				var prevState *deploy.State
+				if !force && be.workDir != nil {
+					prevState = deploy.LoadState(be.workDir.Root())
 				}
 
-				builder := build.NewBuilder(dockerClient, bk, providers.New(), logger, wd, build.Options{NoCache: noCache})
-				images, err := builder.BuildAll(cmd.Context(), s, repoRoot)
-				if err != nil {
-					return err
-				}
-
-				for name, res := range images {
-					logger.Info("built image", "server", name, "tag", res.ImageTag)
-				}
-
-				var prevState *deploy.DeployState
-				if !force && wd != nil {
-					prevState = deploy.LoadState(wd.Root())
-				}
-
-				orch := deploy.New(dockerClient, logger, wd, true)
-				newState, err := orch.Up(cmd.Context(), s, images, deploy.UpOptions{
+				deployer := deploy.New(be.docker, logger, be.workDir, true)
+				newState, err := deployer.Up(cmd.Context(), be.spec, images, deploy.UpOptions{
 					PrevState: prevState,
 					Force:     force,
 				})
@@ -69,15 +41,15 @@ func newUpCmd() *cobra.Command {
 					return err
 				}
 
-				if wd != nil && newState != nil {
-					if saveErr := deploy.SaveState(wd.Root(), newState); saveErr != nil {
+				if be.workDir != nil && newState != nil {
+					if saveErr := deploy.SaveState(be.workDir.Root(), newState); saveErr != nil {
 						logger.Warn("failed to save deploy state", "error", saveErr)
 					}
 				}
 
 				return nil
 			}
-			return remoteClient.Up(cmd.Context(), client.UpOptions{
+			return remoteClient.Up(cmd.Context(), project.UpOptions{
 				NoCache: noCache,
 				Force:   force,
 			})

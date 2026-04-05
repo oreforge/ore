@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 )
 
-type DeployState struct {
+type State struct {
 	Servers  map[string]ServerState  `json:"servers"`
 	Services map[string]ServiceState `json:"services"`
 }
@@ -21,21 +21,21 @@ type ServiceState struct {
 	ConfigHash string `json:"config_hash"`
 }
 
-func NewDeployState() *DeployState {
-	return &DeployState{
+func NewDeployState() *State {
+	return &State{
 		Servers:  make(map[string]ServerState),
 		Services: make(map[string]ServiceState),
 	}
 }
 
-func LoadState(dir string) *DeployState {
+func LoadState(dir string) *State {
 	path := filepath.Join(dir, "state.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return NewDeployState()
 	}
 
-	var s DeployState
+	var s State
 	if err := json.Unmarshal(data, &s); err != nil {
 		return NewDeployState()
 	}
@@ -50,7 +50,7 @@ func LoadState(dir string) *DeployState {
 	return &s
 }
 
-func SaveState(dir string, state *DeployState) error {
+func SaveState(dir string, state *State) error {
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return err

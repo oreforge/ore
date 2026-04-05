@@ -27,3 +27,4 @@ Thumbs.db
 *.secret
 dist/
 playground/
+ore

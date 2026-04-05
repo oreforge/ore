@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/oreforge/ore/internal/build"
-	"github.com/oreforge/ore/internal/client"
+	"github.com/oreforge/ore/internal/project"
 )
 
 func newCleanCmd() *cobra.Command {
@@ -30,11 +30,11 @@ func newCleanCmd() *cobra.Command {
 				}
 				return wd.Clean()
 			}
-			target := client.CleanAll
+			target := project.CleanAll
 			if cacheOnly, _ := cmd.Flags().GetBool("cache"); cacheOnly {
-				target = client.CleanCache
+				target = project.CleanCache
 			} else if buildsOnly, _ := cmd.Flags().GetBool("builds"); buildsOnly {
-				target = client.CleanBuilds
+				target = project.CleanBuilds
 			}
 			return remoteClient.Clean(cmd.Context(), target)
 		},

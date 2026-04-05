@@ -76,7 +76,7 @@ func New(pm *project.Manager, token string, logger *slog.Logger, logLevel slog.L
 		fuego.Use(api, mw.BearerAuth(token))
 	}
 
-	controllers.ProjectResource{PM: pm, DockerClient: dockerClient, LogLevel: logLevel}.MountRoutes(api)
+	controllers.ProjectResource{PM: pm, DockerClient: dockerClient, LogLevel: logLevel, Logger: logger}.MountRoutes(api)
 
 	for _, pathItem := range s.OpenAPI.Description().Paths.Map() {
 		for _, op := range pathItem.Operations() {
@@ -98,6 +98,11 @@ func Run(_ []string, info BuildInfo) int {
 	cfg, err := config.LoadOred()
 	if err != nil {
 		slog.Error("failed to load config", "error", err)
+		return 1
+	}
+
+	if err := config.EnsureToken(cfg); err != nil {
+		slog.Error("failed to ensure auth token", "error", err)
 		return 1
 	}
 

@@ -30,6 +30,7 @@ type ProjectResource struct {
 	PM           *project.Manager
 	DockerClient docker.Client
 	LogLevel     slog.Level
+	Logger       *slog.Logger
 }
 
 func (rs ProjectResource) MountRoutes(s *fuego.Server) {
@@ -50,7 +51,7 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 		option.AddResponse(http.StatusConflict, "Project already exists", fuego.Response{Type: fuego.HTTPError{}}),
 		option.AddResponse(http.StatusUnprocessableEntity, "Clone failed or missing ore.yaml", fuego.Response{Type: fuego.HTTPError{}}),
 	)
-	fuego.Delete(projects, "/{name}", rs.remove,
+	fuego.DeleteStd(projects, "/{name}", rs.remove,
 		option.Summary("Remove a project"),
 		option.Description("Stops all containers and removes the project directory."),
 		option.Tags("Projects"),
@@ -124,7 +125,7 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 	)
 }
 
-func (rs ProjectResource) list(c fuego.ContextNoBody) (dto.ProjectListResponse, error) {
+func (rs ProjectResource) list(_ fuego.ContextNoBody) (dto.ProjectListResponse, error) {
 	names, err := rs.PM.List()
 	if err != nil {
 		return dto.ProjectListResponse{}, fuego.HTTPError{Status: 500, Detail: err.Error()}
@@ -173,22 +174,25 @@ func (rs ProjectResource) add(c fuego.ContextWithBody[dto.AddProjectRequest]) (d
 	return dto.ProjectResponse{Name: name}, nil
 }
 
-func (rs ProjectResource) remove(c fuego.ContextNoBody) (any, error) {
-	name := c.PathParam("name")
+func (rs ProjectResource) remove(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
 	if _, err := rs.PM.Resolve(name); err != nil {
-		return nil, fuego.HTTPError{Status: 404, Detail: err.Error()}
+		errs.Write(w, http.StatusNotFound, err.Error())
+		return
 	}
 
 	rs.PM.StopProjectPoll(name)
-	_ = rs.PM.Down(c.Context(), name, slog.Default())
+	if err := rs.PM.Down(r.Context(), name, rs.Logger); err != nil {
+		rs.Logger.Warn("failed to stop containers during removal", "project", name, "error", err)
+	}
 
 	projectDir := filepath.Join(rs.PM.ProjectsDir(), name)
 	if err := os.RemoveAll(projectDir); err != nil {
-		return nil, fuego.HTTPError{Status: 500, Detail: "removing project: " + err.Error()}
+		errs.Write(w, http.StatusInternalServerError, "removing project: "+err.Error())
+		return
 	}
 
-	c.Response().WriteHeader(204)
-	return nil, nil
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (rs ProjectResource) update(w http.ResponseWriter, r *http.Request) {
@@ -198,7 +202,7 @@ func (rs ProjectResource) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	streamOperation(w, rs.LogLevel, func(logger *slog.Logger) error {
+	streamOperation(w, rs.LogLevel, rs.Logger, func(logger *slog.Logger) error {
 		if err := rs.PM.Pull(r.Context(), name); err != nil {
 			return fmt.Errorf("pulling %s: %w", name, err)
 		}
@@ -228,19 +232,36 @@ func (rs ProjectResource) status(c fuego.ContextNoBody) (dto.StatusResponse, err
 	return *s, nil
 }
 
-func (rs ProjectResource) up(w http.ResponseWriter, r *http.Request) {
+func decodeBody[T any](r *http.Request) (T, error) {
+	var body T
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err != io.EOF {
+			return body, err
+		}
+	}
+	return body, nil
+}
+
+func (rs ProjectResource) resolveAndStream(w http.ResponseWriter, r *http.Request, fn func(name string, logger *slog.Logger) error) {
 	name, err := rs.resolveProject(r)
 	if err != nil {
 		errs.Write(w, http.StatusNotFound, err.Error())
 		return
 	}
 
-	var body dto.UpRequest
-	if r.Body != nil {
-		_ = json.NewDecoder(r.Body).Decode(&body)
+	streamOperation(w, rs.LogLevel, rs.Logger, func(logger *slog.Logger) error {
+		return fn(name, logger)
+	})
+}
+
+func (rs ProjectResource) up(w http.ResponseWriter, r *http.Request) {
+	body, err := decodeBody[dto.UpRequest](r)
+	if err != nil {
+		errs.Write(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
 	}
 
-	streamOperation(w, rs.LogLevel, func(logger *slog.Logger) error {
+	rs.resolveAndStream(w, r, func(name string, logger *slog.Logger) error {
 		return rs.PM.Up(r.Context(), name, project.UpOptions{
 			NoCache: body.NoCache,
 			Force:   body.Force,
@@ -249,44 +270,28 @@ func (rs ProjectResource) up(w http.ResponseWriter, r *http.Request) {
 }
 
 func (rs ProjectResource) down(w http.ResponseWriter, r *http.Request) {
-	name, err := rs.resolveProject(r)
-	if err != nil {
-		errs.Write(w, http.StatusNotFound, err.Error())
-		return
-	}
-
-	streamOperation(w, rs.LogLevel, func(logger *slog.Logger) error {
+	rs.resolveAndStream(w, r, func(name string, logger *slog.Logger) error {
 		return rs.PM.Down(r.Context(), name, logger)
 	})
 }
 
 func (rs ProjectResource) build(w http.ResponseWriter, r *http.Request) {
-	name, err := rs.resolveProject(r)
+	body, err := decodeBody[dto.BuildRequest](r)
 	if err != nil {
-		errs.Write(w, http.StatusNotFound, err.Error())
+		errs.Write(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
 
-	var body dto.BuildRequest
-	if r.Body != nil {
-		_ = json.NewDecoder(r.Body).Decode(&body)
-	}
-
-	streamOperation(w, rs.LogLevel, func(logger *slog.Logger) error {
+	rs.resolveAndStream(w, r, func(name string, logger *slog.Logger) error {
 		return rs.PM.Build(r.Context(), name, body.NoCache, logger)
 	})
 }
 
 func (rs ProjectResource) prune(w http.ResponseWriter, r *http.Request) {
-	name, err := rs.resolveProject(r)
+	body, err := decodeBody[dto.PruneRequest](r)
 	if err != nil {
-		errs.Write(w, http.StatusNotFound, err.Error())
+		errs.Write(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
-	}
-
-	var body dto.PruneRequest
-	if r.Body != nil {
-		_ = json.NewDecoder(r.Body).Decode(&body)
 	}
 
 	var target project.PruneTarget
@@ -300,21 +305,17 @@ func (rs ProjectResource) prune(w http.ResponseWriter, r *http.Request) {
 	default:
 		target = project.PruneAll
 	}
-	streamOperation(w, rs.LogLevel, func(logger *slog.Logger) error {
+
+	rs.resolveAndStream(w, r, func(name string, logger *slog.Logger) error {
 		return rs.PM.Prune(r.Context(), name, target, logger)
 	})
 }
 
 func (rs ProjectResource) clean(w http.ResponseWriter, r *http.Request) {
-	name, err := rs.resolveProject(r)
+	body, err := decodeBody[dto.CleanRequest](r)
 	if err != nil {
-		errs.Write(w, http.StatusNotFound, err.Error())
+		errs.Write(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
-	}
-
-	var body dto.CleanRequest
-	if r.Body != nil {
-		_ = json.NewDecoder(r.Body).Decode(&body)
 	}
 
 	var target project.CleanTarget
@@ -326,7 +327,8 @@ func (rs ProjectResource) clean(w http.ResponseWriter, r *http.Request) {
 	default:
 		target = project.CleanAll
 	}
-	streamOperation(w, rs.LogLevel, func(logger *slog.Logger) error {
+
+	rs.resolveAndStream(w, r, func(name string, logger *slog.Logger) error {
 		return rs.PM.Clean(r.Context(), name, target, logger)
 	})
 }
@@ -344,7 +346,7 @@ func (rs ProjectResource) console(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = conn.CloseNow() }()
 
-	logger := slog.Default()
+	logger := rs.Logger
 
 	_, msg, err := conn.Read(r.Context())
 	if err != nil {

@@ -155,7 +155,7 @@ func (b *Builder) Build(ctx context.Context, srv *spec.Server, repoRoot string) 
 	b.logger.Info("image built", "server", srv.Name, "tag", imageTag, "duration", duration)
 
 	if b.workDir != nil {
-		meta := BuildMetadata{
+		meta := Metadata{
 			ServerName:   srv.Name,
 			SoftwareID:   srv.Software,
 			ArtifactURL:  artifact.URL,
