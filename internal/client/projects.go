@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 )
 
@@ -24,7 +25,7 @@ func (c *Client) AddProject(ctx context.Context, repoURL, name string) (string, 
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != 201 {
+	if resp.StatusCode != http.StatusCreated {
 		return "", c.readError(resp)
 	}
 
@@ -49,14 +50,14 @@ func (c *Client) RemoveProject(ctx context.Context, name string) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != 204 {
+	if resp.StatusCode != http.StatusNoContent {
 		return c.readError(resp)
 	}
 	return nil
 }
 
 func (c *Client) UpdateProject(ctx context.Context, name string) error {
-	return c.streamRequest(ctx, "PATCH", "/api/projects/"+url.PathEscape(name), nil)
+	return c.streamRequest(ctx, "POST", "/api/projects/"+url.PathEscape(name)+"/update", nil)
 }
 
 func (c *Client) ListProjects(ctx context.Context) ([]string, error) {
@@ -71,7 +72,7 @@ func (c *Client) ListProjects(ctx context.Context) ([]string, error) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		return nil, c.readError(resp)
 	}
 

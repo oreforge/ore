@@ -36,13 +36,13 @@ type ProjectResource struct {
 func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 	projects := fuego.Group(s, "/projects")
 
-	fuego.Get(projects, "/", rs.list,
+	fuego.Get(projects, "", rs.list,
 		option.Summary("List projects"),
 		option.Description("Returns names of all projects that contain an ore.yaml."),
 		option.Tags("Projects"),
 		option.OperationID("listProjects"),
 	)
-	fuego.Post(projects, "/", rs.add,
+	fuego.Post(projects, "", rs.add,
 		option.Summary("Clone a project"),
 		option.Description("Clones a git repository into the projects directory. The repository must contain an ore.yaml."),
 		option.Tags("Projects"),
@@ -58,19 +58,18 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 		option.OperationID("removeProject"),
 		option.Path("name", "Project name"),
 	)
-	fuego.PatchStd(projects, "/{name}", rs.update,
-		option.Summary("Update a project"),
-		option.OverrideDescription(ndjsonDesc),
-		option.Tags("Projects"),
-		option.OperationID("updateProject"),
-		option.Path("name", "Project name"),
-		option.AddResponse(http.StatusOK, "NDJSON progress stream", fuego.Response{Type: dto.StreamLine{}}),
-	)
 
 	ops := fuego.Group(projects, "/{name}",
 		option.Path("name", "Project name"),
 	)
 
+	fuego.PostStd(ops, "/update", rs.update,
+		option.Summary("Update a project"),
+		option.OverrideDescription(ndjsonDesc),
+		option.Tags("Projects"),
+		option.OperationID("updateProject"),
+		option.AddResponse(http.StatusOK, "NDJSON progress stream", fuego.Response{Type: dto.StreamLine{}}),
+	)
 	fuego.Get(ops, "/status", rs.status,
 		option.Summary("Get network status"),
 		option.Description("Returns the status of all containers in the project network."),
