@@ -1,6 +1,8 @@
 package build
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -14,10 +16,9 @@ import (
 	"sync"
 	"time"
 
+	dockerbuild "github.com/docker/docker/api/types/build"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
-	bkclient "github.com/moby/buildkit/client"
-	"github.com/tonistiigi/fsutil"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 
@@ -41,7 +42,6 @@ type Result struct {
 
 type Builder struct {
 	docker    docker.Client
-	bk        *bkclient.Client
 	resolver  *software.Resolver
 	logger    *slog.Logger
 	workDir   *WorkDir
@@ -49,10 +49,9 @@ type Builder struct {
 	fetchOnce singleflight.Group
 }
 
-func NewBuilder(dockerClient docker.Client, bk *bkclient.Client, resolver *software.Resolver, logger *slog.Logger, workDir *WorkDir, opts Options) *Builder {
+func NewBuilder(dockerClient docker.Client, resolver *software.Resolver, logger *slog.Logger, workDir *WorkDir, opts Options) *Builder {
 	return &Builder{
 		docker:   dockerClient,
-		bk:       bk,
 		resolver: resolver,
 		logger:   logger,
 		workDir:  workDir,
@@ -147,7 +146,7 @@ func (b *Builder) Build(ctx context.Context, srv *spec.Server, repoRoot string) 
 
 	b.logger.Info("building image", "server", srv.Name, "tag", imageTag)
 
-	if err := b.buildWithBuildKit(ctx, buildDir, imageTag, srv.Name, cacheKey); err != nil {
+	if err := b.buildImage(ctx, buildDir, imageTag, srv.Name, cacheKey); err != nil {
 		return Result{}, err
 	}
 
@@ -223,71 +222,82 @@ func (b *Builder) prepareBuildDir(serverName, cacheKey, serverDir, dockerfile, e
 	return tmpDir, cleanup, nil
 }
 
-func (b *Builder) buildWithBuildKit(ctx context.Context, buildDir, imageTag, serverName, cacheKey string) error {
-	ctxMount, err := fsutil.NewFS(buildDir)
+func (b *Builder) buildImage(ctx context.Context, buildDir, imageTag, serverName, cacheKey string) error {
+	buildContext, err := createTarContext(buildDir)
 	if err != nil {
-		return fmt.Errorf("creating build context mount: %w", err)
+		return fmt.Errorf("creating build context: %w", err)
 	}
 
-	pipeR, pipeW := io.Pipe()
-	ch := make(chan *bkclient.SolveStatus)
-	eg, ctx := errgroup.WithContext(ctx)
-
-	eg.Go(func() error {
-		defer func() { _ = pipeW.Close() }()
-		_, err := b.bk.Solve(ctx, nil, bkclient.SolveOpt{
-			Frontend: "dockerfile.v0",
-			FrontendAttrs: map[string]string{
-				"filename": "Dockerfile",
-			},
-			LocalMounts: map[string]fsutil.FS{
-				"context":    ctxMount,
-				"dockerfile": ctxMount,
-			},
-			Exports: []bkclient.ExportEntry{{
-				Type:  bkclient.ExporterDocker,
-				Attrs: map[string]string{"name": imageTag},
-				Output: func(_ map[string]string) (io.WriteCloser, error) {
-					return pipeW, nil
-				},
-			}},
-		}, ch)
-		return err
+	resp, err := b.docker.ImageBuild(ctx, buildContext, dockerbuild.ImageBuildOptions{
+		Tags:       []string{imageTag},
+		Dockerfile: "Dockerfile",
+		Remove:     true,
 	})
-
-	eg.Go(func() error {
-		var buildOut io.Writer
-		if b.workDir != nil {
-			logFile, logErr := b.workDir.CreateBuildLog(serverName, cacheKey)
-			if logErr == nil {
-				defer func() { _ = logFile.Close() }()
-				buildOut = logFile
-			}
-		}
-		for status := range ch {
-			if buildOut != nil {
-				for _, log := range status.Logs {
-					_, _ = buildOut.Write(log.Data)
-				}
-			}
-		}
-		return nil
-	})
-
-	eg.Go(func() error {
-		resp, err := b.docker.ImageLoad(ctx, pipeR)
-		if err != nil {
-			return fmt.Errorf("loading image into docker: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-		_, _ = io.Copy(io.Discard, resp.Body)
-		return nil
-	})
-
-	if err := eg.Wait(); err != nil {
+	if err != nil {
 		return fmt.Errorf("docker build failed: %w", err)
 	}
+	defer func() { _ = resp.Body.Close() }()
+
+	buildOut := io.Discard
+	if b.workDir != nil {
+		logFile, logErr := b.workDir.CreateBuildLog(serverName, cacheKey)
+		if logErr == nil {
+			defer func() { _ = logFile.Close() }()
+			buildOut = logFile
+		}
+	}
+	_, _ = io.Copy(buildOut, resp.Body)
+
 	return nil
+}
+
+func createTarContext(dir string) (io.Reader, error) {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return nil
+		}
+
+		header, err := tar.FileInfoHeader(info, "")
+		if err != nil {
+			return err
+		}
+		header.Name = rel
+
+		if err := tw.WriteHeader(header); err != nil {
+			return err
+		}
+
+		if info.IsDir() {
+			return nil
+		}
+
+		f, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = f.Close() }()
+		_, err = io.Copy(tw, f)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if err := tw.Close(); err != nil {
+		return nil, err
+	}
+	return &buf, nil
 }
 
 type fetchResult struct {

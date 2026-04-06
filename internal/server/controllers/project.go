@@ -404,6 +404,11 @@ func (rs ProjectResource) console(w http.ResponseWriter, r *http.Request) {
 	}
 	defer hijacked.Close()
 
+	_ = rs.DockerClient.ContainerResize(r.Context(), serverName, container.ResizeOptions{
+		Width:  uint(cols),
+		Height: uint(rows),
+	})
+
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
@@ -413,14 +418,12 @@ func (rs ProjectResource) console(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	var wg sync.WaitGroup
-	ready := make(chan struct{})
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		defer cancel()
 		buf := make([]byte, 4096)
-		close(ready)
 		for {
 			n, readErr := hijacked.Conn.Read(buf)
 			if n > 0 {
@@ -434,12 +437,6 @@ func (rs ProjectResource) console(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}()
-
-	<-ready
-	_ = rs.DockerClient.ContainerResize(r.Context(), serverName, container.ResizeOptions{
-		Width:  uint(cols),
-		Height: uint(rows),
-	})
 
 	wg.Add(1)
 	go func() {

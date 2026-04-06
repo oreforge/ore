@@ -32,24 +32,16 @@ func newBuildEnv(ctx context.Context, opts build.Options) (*buildEnv, func(), er
 		return nil, nil, fmt.Errorf("connecting to Docker: %w", err)
 	}
 
-	bk, err := docker.NewBuildKitClient(ctx, dockerClient)
-	if err != nil {
-		_ = dockerClient.Close()
-		return nil, nil, fmt.Errorf("connecting to BuildKit: %w", err)
-	}
-
 	repoRoot := filepath.Dir(specPath)
 	wd, err := build.NewWorkDir(repoRoot, logger)
 	if err != nil {
-		_ = bk.Close()
 		_ = dockerClient.Close()
 		return nil, nil, fmt.Errorf("initializing .ore directory: %w", err)
 	}
 
-	builder := build.NewBuilder(dockerClient, bk, providers.New(), logger, wd, opts)
+	builder := build.NewBuilder(dockerClient, providers.New(), logger, wd, opts)
 
 	cleanup := func() {
-		_ = bk.Close()
 		_ = dockerClient.Close()
 	}
 
