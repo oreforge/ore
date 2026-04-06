@@ -25,6 +25,8 @@ import (
 	"github.com/oreforge/ore/internal/project"
 	"github.com/oreforge/ore/internal/server/dto"
 	"github.com/oreforge/ore/internal/server/errs"
+	"github.com/oreforge/ore/internal/spec"
+	"github.com/oreforge/ore/internal/webhook"
 )
 
 type ProjectResource struct {
@@ -32,6 +34,7 @@ type ProjectResource struct {
 	DockerClient docker.Client
 	LogLevel     slog.Level
 	Logger       *slog.Logger
+	Token        string
 }
 
 func (rs ProjectResource) MountRoutes(s *fuego.Server) {
@@ -139,6 +142,13 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 		option.Query("cols", "Initial terminal width (default 80)"),
 		option.Query("rows", "Initial terminal height (default 24)"),
 		option.AddResponse(http.StatusBadRequest, "Missing server parameter", fuego.Response{Type: fuego.HTTPError{}}),
+	)
+	fuego.Get(ops, "/webhook", rs.webhookInfo,
+		option.Summary("Get webhook info"),
+		option.Description("Returns the webhook URL and secret for this project. The secret is derived from HMAC-SHA256(token, project_name)."),
+		option.Tags("Projects"),
+		option.OperationID("getWebhookInfo"),
+		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
 	)
 }
 
@@ -486,6 +496,33 @@ func parseTermDim(r *http.Request, param string, defaultVal, max int) (int, erro
 		return max, nil
 	}
 	return n, nil
+}
+
+func (rs ProjectResource) webhookInfo(c fuego.ContextNoBody) (dto.WebhookInfoResponse, error) {
+	name := c.PathParam("name")
+	specPath, err := rs.PM.Resolve(name)
+	if err != nil {
+		return dto.WebhookInfoResponse{}, fuego.HTTPError{Status: 404, Detail: err.Error()}
+	}
+
+	s, err := spec.Load(specPath)
+	if err != nil {
+		return dto.WebhookInfoResponse{}, fuego.HTTPError{Status: 500, Detail: "failed to load project spec"}
+	}
+
+	enabled := s.GitOps != nil && s.GitOps.Webhook.Enabled
+	if !enabled {
+		return dto.WebhookInfoResponse{Enabled: false}, nil
+	}
+
+	secret := webhook.DeriveSecret(rs.Token, name)
+	webhookURL := fmt.Sprintf("/webhook/%s?secret=%s", url.PathEscape(name), secret)
+
+	return dto.WebhookInfoResponse{
+		Enabled: true,
+		URL:     webhookURL,
+		Secret:  secret,
+	}, nil
 }
 
 func nameFromURL(rawURL string) (string, error) {

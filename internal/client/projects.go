@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+
+	"github.com/oreforge/ore/internal/server/dto"
 )
 
 func (c *Client) AddProject(ctx context.Context, repoURL, name string) (string, error) {
@@ -58,6 +60,29 @@ func (c *Client) RemoveProject(ctx context.Context, name string) error {
 
 func (c *Client) UpdateProject(ctx context.Context, name string) error {
 	return c.streamRequest(ctx, "POST", "/api/projects/"+url.PathEscape(name)+"/update", nil)
+}
+
+func (c *Client) WebhookInfo(ctx context.Context, name string) (*dto.WebhookInfoResponse, error) {
+	req, err := c.newRequest(ctx, "GET", "/api/projects/"+url.PathEscape(name)+"/webhook", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("webhook info request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, c.readError(resp)
+	}
+
+	var info dto.WebhookInfoResponse
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return nil, fmt.Errorf("decoding webhook info: %w", err)
+	}
+	return &info, nil
 }
 
 func (c *Client) ListProjects(ctx context.Context) ([]string, error) {

@@ -76,7 +76,11 @@ func New(pm *project.Manager, token string, logger *slog.Logger, logLevel slog.L
 		fuego.Use(api, mw.BearerAuth(token))
 	}
 
-	controllers.ProjectResource{PM: pm, DockerClient: dockerClient, LogLevel: logLevel, Logger: logger}.MountRoutes(api)
+	controllers.ProjectResource{PM: pm, DockerClient: dockerClient, LogLevel: logLevel, Logger: logger, Token: token}.MountRoutes(api)
+
+	webhookGroup := fuego.Group(s, "/webhook")
+	fuego.Use(webhookGroup, mw.RequestLogger(logger))
+	controllers.WebhookResource{PM: pm, Token: token, Logger: logger}.MountRoutes(webhookGroup)
 
 	for _, pathItem := range s.OpenAPI.Description().Paths.Map() {
 		for _, op := range pathItem.Operations() {

@@ -10,12 +10,17 @@ type Network struct {
 }
 
 type GitOps struct {
-	Poll GitOpsPoll `yaml:"poll,omitempty"`
+	Poll    GitOpsPoll    `yaml:"poll,omitempty"`
+	Webhook GitOpsWebhook `yaml:"webhook,omitempty"`
 }
 
 type GitOpsPoll struct {
 	Enabled  bool          `yaml:"enabled,omitempty"`
 	Interval time.Duration `yaml:"interval,omitempty"`
+}
+
+type GitOpsWebhook struct {
+	Enabled bool `yaml:"enabled,omitempty"`
 }
 
 type Server struct {

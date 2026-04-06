@@ -22,6 +22,7 @@ func newProjectsCmd() *cobra.Command {
 		newProjectsUpdateCmd(),
 		newProjectsUseCmd(),
 		newProjectsActiveCmd(),
+		newProjectsWebhookCmd(),
 	)
 
 	return cmd
@@ -144,6 +145,33 @@ func newProjectsUseCmd() *cobra.Command {
 				return err
 			}
 			fmt.Printf("switched to project %q\n", args[0])
+			return nil
+		},
+	}
+}
+
+func newProjectsWebhookCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "webhook <name>",
+		Short: "Show webhook URL for a project",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			r, err := requireRemote()
+			if err != nil {
+				return err
+			}
+
+			info, err := r.WebhookInfo(cmd.Context(), args[0])
+			if err != nil {
+				return err
+			}
+
+			if !info.Enabled {
+				return fmt.Errorf("webhook is not enabled for project %q", args[0])
+			}
+
+			addr, _, _, _ := config.ResolveRemote(cfg)
+			fmt.Printf("http://%s%s\n", addr, info.URL)
 			return nil
 		},
 	}

@@ -113,14 +113,53 @@ func (m *Manager) poll(ctx context.Context, name string, interval time.Duration,
 			logger.Info("gitops polling stopped")
 			return
 		case <-ticker.C:
-			if err := m.Deploy(ctx, name); err != nil {
-				if ctx.Err() != nil {
-					return
-				}
-				logger.Error("gitops deploy failed", "error", err)
-			}
+			m.syncDeploy(ctx, name)
 		}
 	}
+}
+
+func (m *Manager) TriggerDeploy(name string) bool {
+	if !m.acquireDeploy(name) {
+		return false
+	}
+	go func() {
+		defer m.releaseDeploy(name)
+		if err := m.Deploy(context.Background(), name); err != nil {
+			m.logger.Error("triggered deploy failed", "project", name, "error", err)
+		}
+	}()
+	return true
+}
+
+func (m *Manager) syncDeploy(ctx context.Context, name string) {
+	if !m.acquireDeploy(name) {
+		return
+	}
+	defer m.releaseDeploy(name)
+
+	if err := m.Deploy(ctx, name); err != nil {
+		if ctx.Err() != nil {
+			return
+		}
+		m.logger.Error("gitops deploy failed", "project", name, "error", err)
+	}
+}
+
+func (m *Manager) acquireDeploy(name string) bool {
+	m.deployMu.Lock()
+	defer m.deployMu.Unlock()
+	if m.deploying[name] {
+		m.logger.Info("deploy already in progress, skipping", "project", name)
+		return false
+	}
+	m.deploying[name] = true
+	return true
+}
+
+func (m *Manager) releaseDeploy(name string) {
+	m.deployMu.Lock()
+	delete(m.deploying, name)
+	m.deployMu.Unlock()
 }
 
 func (m *Manager) Shutdown(ctx context.Context) {

@@ -27,6 +27,8 @@ type Manager struct {
 	pollCancel  context.CancelFunc
 	pollMu      sync.Mutex
 	polls       map[string]pollEntry
+	deployMu    sync.Mutex
+	deploying   map[string]bool
 }
 
 func NewManager(projectsDir string, bindMounts bool, logger *slog.Logger) *Manager {
@@ -35,6 +37,7 @@ func NewManager(projectsDir string, bindMounts bool, logger *slog.Logger) *Manag
 		bindMounts:  bindMounts,
 		logger:      logger,
 		polls:       make(map[string]pollEntry),
+		deploying:   make(map[string]bool),
 	}
 }
 
