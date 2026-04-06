@@ -113,8 +113,10 @@ func StartServiceContainer(ctx context.Context, client docker.Client, svc *spec.
 	logger.Info("creating service container", "name", containerName, "image", svc.Image)
 
 	containerConfig := &container.Config{
-		Image: svc.Image,
-		Env:   sortedEnv(svc.Env),
+		Image:     svc.Image,
+		Env:       sortedEnv(svc.Env),
+		Tty:       true,
+		OpenStdin: true,
 		Labels: map[string]string{
 			labelManaged: "true",
 			labelNetwork: networkName,
