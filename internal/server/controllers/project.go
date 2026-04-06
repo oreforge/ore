@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -117,10 +118,12 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 	)
 	fuego.GetStd(ops, "/console", rs.console,
 		option.Summary("Server console"),
-		option.Description("WebSocket endpoint for interactive server console. Send initial {width, height} JSON message after connecting."),
+		option.Description("WebSocket endpoint for interactive server console. Terminal I/O uses binary frames; send JSON text frames with {width, height} to resize."),
 		option.Tags("Projects"),
 		option.OperationID("console"),
-		option.Query("server", "Container name to attach to"),
+		option.Query("container", "Container name to attach to"),
+		option.Query("cols", "Initial terminal width (default 80)"),
+		option.Query("rows", "Initial terminal height (default 24)"),
 	)
 }
 
@@ -333,10 +336,22 @@ func (rs ProjectResource) clean(w http.ResponseWriter, r *http.Request) {
 }
 
 func (rs ProjectResource) console(w http.ResponseWriter, r *http.Request) {
-	serverName := r.URL.Query().Get("server")
-	if serverName == "" {
-		errs.Write(w, http.StatusBadRequest, "missing server query parameter")
+	containerName := r.URL.Query().Get("container")
+	if containerName == "" {
+		errs.Write(w, http.StatusBadRequest, "missing container query parameter")
 		return
+	}
+
+	cols, rows := 80, 24
+	if v := r.URL.Query().Get("cols"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cols = n
+		}
+	}
+	if v := r.URL.Query().Get("rows"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			rows = n
+		}
 	}
 
 	conn, err := websocket.Accept(w, r, nil)
@@ -347,21 +362,7 @@ func (rs ProjectResource) console(w http.ResponseWriter, r *http.Request) {
 
 	logger := rs.Logger
 
-	_, msg, err := conn.Read(r.Context())
-	if err != nil {
-		logger.Error("console: reading initial size", "error", err)
-		return
-	}
-	var size struct {
-		Width  int `json:"width"`
-		Height int `json:"height"`
-	}
-	if err := json.Unmarshal(msg, &size); err != nil {
-		logger.Error("console: parsing initial size", "error", err)
-		return
-	}
-
-	hijacked, err := rs.DockerClient.ContainerAttach(r.Context(), serverName, container.AttachOptions{
+	hijacked, err := rs.DockerClient.ContainerAttach(r.Context(), containerName, container.AttachOptions{
 		Stream: true,
 		Stdin:  true,
 		Stdout: true,
@@ -369,17 +370,15 @@ func (rs ProjectResource) console(w http.ResponseWriter, r *http.Request) {
 		Logs:   true,
 	})
 	if err != nil {
-		logger.Error("console: attaching to container", "container", serverName, "error", err)
+		logger.Error("console: attaching to container", "container", containerName, "error", err)
 		return
 	}
 	defer hijacked.Close()
 
-	if size.Width > 0 && size.Height > 0 {
-		_ = rs.DockerClient.ContainerResize(r.Context(), serverName, container.ResizeOptions{
-			Width:  uint(size.Width),
-			Height: uint(size.Height),
-		})
-	}
+	_ = rs.DockerClient.ContainerResize(r.Context(), containerName, container.ResizeOptions{
+		Width:  uint(cols),
+		Height: uint(rows),
+	})
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
@@ -421,7 +420,7 @@ func (rs ProjectResource) console(w http.ResponseWriter, r *http.Request) {
 					Height int `json:"height"`
 				}
 				if json.Unmarshal(data, &resize) == nil && resize.Width > 0 && resize.Height > 0 {
-					_ = rs.DockerClient.ContainerResize(ctx, serverName, container.ResizeOptions{
+					_ = rs.DockerClient.ContainerResize(ctx, containerName, container.ResizeOptions{
 						Width:  uint(resize.Width),
 						Height: uint(resize.Height),
 					})

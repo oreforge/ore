@@ -8,8 +8,11 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"strconv"
 
 	"github.com/coder/websocket"
+	"golang.org/x/term"
 
 	"github.com/oreforge/ore/internal/console"
 	"github.com/oreforge/ore/internal/deploy"
@@ -87,11 +90,24 @@ func (c *Client) Clean(ctx context.Context, target project.CleanTarget) error {
 }
 
 func (c *Client) Console(ctx context.Context, serverName string) error {
+	cols, rows := 80, 24
+	fd := int(os.Stdin.Fd())
+	if term.IsTerminal(fd) {
+		if w, h, err := term.GetSize(fd); err == nil {
+			cols, rows = w, h
+		}
+	}
+
+	q := url.Values{}
+	q.Set("container", serverName)
+	q.Set("cols", strconv.Itoa(cols))
+	q.Set("rows", strconv.Itoa(rows))
+
 	u := url.URL{
 		Scheme:   "ws",
 		Host:     c.addr,
 		Path:     c.projectPath() + "/console",
-		RawQuery: "server=" + url.QueryEscape(serverName),
+		RawQuery: q.Encode(),
 	}
 
 	headers := http.Header{}
