@@ -409,22 +409,20 @@ func (rs ProjectResource) console(w http.ResponseWriter, r *http.Request) {
 		defer wg.Done()
 		defer cancel()
 		for {
-			typ, data, readErr := conn.Read(ctx)
+			_, data, readErr := conn.Read(ctx)
 			if readErr != nil {
 				_ = hijacked.CloseWrite()
 				return
 			}
-			if typ == websocket.MessageText {
-				var resize struct {
-					Width  int `json:"width"`
-					Height int `json:"height"`
-				}
-				if json.Unmarshal(data, &resize) == nil && resize.Width > 0 && resize.Height > 0 {
-					_ = rs.DockerClient.ContainerResize(ctx, containerName, container.ResizeOptions{
-						Width:  uint(resize.Width),
-						Height: uint(resize.Height),
-					})
-				}
+			var resize struct {
+				Width  int `json:"width"`
+				Height int `json:"height"`
+			}
+			if json.Unmarshal(data, &resize) == nil && resize.Width > 0 && resize.Height > 0 {
+				_ = rs.DockerClient.ContainerResize(ctx, containerName, container.ResizeOptions{
+					Width:  uint(resize.Width),
+					Height: uint(resize.Height),
+				})
 				continue
 			}
 			if _, err := io.Copy(hijacked.Conn, bytes.NewReader(data)); err != nil {
