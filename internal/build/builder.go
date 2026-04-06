@@ -22,6 +22,8 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 
+	"github.com/docker/docker/pkg/jsonmessage"
+
 	"github.com/oreforge/ore/internal/docker"
 	"github.com/oreforge/ore/internal/software"
 	"github.com/oreforge/ore/internal/spec"
@@ -229,9 +231,11 @@ func (b *Builder) buildImage(ctx context.Context, buildDir, imageTag, serverName
 	}
 
 	resp, err := b.docker.ImageBuild(ctx, buildContext, dockerbuild.ImageBuildOptions{
-		Tags:       []string{imageTag},
-		Dockerfile: "Dockerfile",
-		Remove:     true,
+		Tags:        []string{imageTag},
+		Dockerfile:  "Dockerfile",
+		Remove:      true,
+		ForceRemove: true,
+		Version:     dockerbuild.BuilderBuildKit,
 	})
 	if err != nil {
 		return fmt.Errorf("docker build failed: %w", err)
@@ -246,7 +250,10 @@ func (b *Builder) buildImage(ctx context.Context, buildDir, imageTag, serverName
 			buildOut = logFile
 		}
 	}
-	_, _ = io.Copy(buildOut, resp.Body)
+
+	if err := jsonmessage.DisplayJSONMessagesStream(resp.Body, buildOut, 0, false, nil); err != nil {
+		return fmt.Errorf("docker build for %s failed: %w", serverName, err)
+	}
 
 	return nil
 }
