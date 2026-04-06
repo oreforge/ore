@@ -58,6 +58,9 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 		option.Tags("Projects"),
 		option.OperationID("removeProject"),
 		option.Path("name", "Project name"),
+		option.DefaultStatusCode(http.StatusNoContent),
+		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
+		option.AddResponse(http.StatusInternalServerError, "Removal failed", fuego.Response{Type: fuego.HTTPError{}}),
 	)
 
 	ops := fuego.Group(projects, "/{name}",
@@ -70,12 +73,14 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 		option.Tags("Projects"),
 		option.OperationID("updateProject"),
 		option.AddResponse(http.StatusOK, "NDJSON progress stream", fuego.Response{Type: dto.StreamLine{}}),
+		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
 	)
 	fuego.Get(ops, "/status", rs.status,
 		option.Summary("Get network status"),
 		option.Description("Returns the status of all containers in the project network."),
 		option.Tags("Projects"),
 		option.OperationID("getStatus"),
+		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
 	)
 	fuego.PostStd(ops, "/up", rs.up,
 		option.Summary("Start the network"),
@@ -84,6 +89,8 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 		option.OperationID("up"),
 		option.RequestBody(fuego.RequestBody{Type: dto.UpRequest{}}),
 		option.AddResponse(http.StatusOK, "NDJSON progress stream", fuego.Response{Type: dto.StreamLine{}}),
+		option.AddResponse(http.StatusBadRequest, "Invalid request body", fuego.Response{Type: fuego.HTTPError{}}),
+		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
 	)
 	fuego.PostStd(ops, "/down", rs.down,
 		option.Summary("Stop the network"),
@@ -91,6 +98,7 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 		option.Tags("Projects"),
 		option.OperationID("down"),
 		option.AddResponse(http.StatusOK, "NDJSON progress stream", fuego.Response{Type: dto.StreamLine{}}),
+		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
 	)
 	fuego.PostStd(ops, "/build", rs.build,
 		option.Summary("Build images"),
@@ -99,6 +107,8 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 		option.OperationID("build"),
 		option.RequestBody(fuego.RequestBody{Type: dto.BuildRequest{}}),
 		option.AddResponse(http.StatusOK, "NDJSON progress stream", fuego.Response{Type: dto.StreamLine{}}),
+		option.AddResponse(http.StatusBadRequest, "Invalid request body", fuego.Response{Type: fuego.HTTPError{}}),
+		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
 	)
 	fuego.PostStd(ops, "/prune", rs.prune,
 		option.Summary("Prune resources"),
@@ -107,6 +117,8 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 		option.OperationID("prune"),
 		option.RequestBody(fuego.RequestBody{Type: dto.PruneRequest{}}),
 		option.AddResponse(http.StatusOK, "NDJSON progress stream", fuego.Response{Type: dto.StreamLine{}}),
+		option.AddResponse(http.StatusBadRequest, "Invalid request body", fuego.Response{Type: fuego.HTTPError{}}),
+		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
 	)
 	fuego.PostStd(ops, "/clean", rs.clean,
 		option.Summary("Clean artifacts"),
@@ -115,6 +127,8 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 		option.OperationID("clean"),
 		option.RequestBody(fuego.RequestBody{Type: dto.CleanRequest{}}),
 		option.AddResponse(http.StatusOK, "NDJSON progress stream", fuego.Response{Type: dto.StreamLine{}}),
+		option.AddResponse(http.StatusBadRequest, "Invalid request body", fuego.Response{Type: fuego.HTTPError{}}),
+		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
 	)
 	fuego.GetStd(ops, "/console", rs.console,
 		option.Summary("Server console"),
@@ -124,6 +138,7 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 		option.Query("container", "Container name to attach to"),
 		option.Query("cols", "Initial terminal width (default 80)"),
 		option.Query("rows", "Initial terminal height (default 24)"),
+		option.AddResponse(http.StatusBadRequest, "Missing container parameter", fuego.Response{Type: fuego.HTTPError{}}),
 	)
 }
 
@@ -141,12 +156,17 @@ func (rs ProjectResource) add(c fuego.ContextWithBody[dto.AddProjectRequest]) (d
 		return dto.ProjectResponse{}, fuego.HTTPError{Status: 400, Detail: err.Error()}
 	}
 
+	repoURL, parseErr := url.Parse(body.URL)
+	if parseErr != nil || (repoURL.Scheme != "https" && repoURL.Scheme != "http") {
+		return dto.ProjectResponse{}, fuego.HTTPError{Status: 400, Detail: "only http and https repository URLs are supported"}
+	}
+
 	name := body.Name
 	if name == "" {
-		var parseErr error
-		name, parseErr = nameFromURL(body.URL)
-		if parseErr != nil {
-			return dto.ProjectResponse{}, fuego.HTTPError{Status: 400, Detail: "invalid repository URL: " + parseErr.Error()}
+		var nameErr error
+		name, nameErr = nameFromURL(body.URL)
+		if nameErr != nil {
+			return dto.ProjectResponse{}, fuego.HTTPError{Status: 400, Detail: "invalid repository URL: " + nameErr.Error()}
 		}
 	}
 
@@ -227,6 +247,9 @@ func (rs ProjectResource) resolveProject(r *http.Request) (string, error) {
 
 func (rs ProjectResource) status(c fuego.ContextNoBody) (dto.StatusResponse, error) {
 	name := c.PathParam("name")
+	if _, err := rs.PM.Resolve(name); err != nil {
+		return dto.StatusResponse{}, fuego.HTTPError{Status: 404, Detail: err.Error()}
+	}
 	s, err := rs.PM.Status(c.Context(), name)
 	if err != nil {
 		return dto.StatusResponse{}, fuego.HTTPError{Status: 500, Detail: err.Error()}
@@ -237,6 +260,10 @@ func (rs ProjectResource) status(c fuego.ContextNoBody) (dto.StatusResponse, err
 func decodeBody[T any](r *http.Request) (T, error) {
 	var body T
 	if r.Body != nil {
+		ct := r.Header.Get("Content-Type")
+		if ct != "" && !strings.HasPrefix(ct, "application/json") {
+			return body, fmt.Errorf("unsupported content type: %s", ct)
+		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err != io.EOF {
 			return body, err
 		}
@@ -354,11 +381,14 @@ func (rs ProjectResource) console(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	conn, err := websocket.Accept(w, r, nil)
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		InsecureSkipVerify: true,
+	})
 	if err != nil {
 		return
 	}
 	defer func() { _ = conn.CloseNow() }()
+	conn.SetReadLimit(64 * 1024)
 
 	logger := rs.Logger
 
@@ -414,20 +444,22 @@ func (rs ProjectResource) console(w http.ResponseWriter, r *http.Request) {
 		defer wg.Done()
 		defer cancel()
 		for {
-			_, data, readErr := conn.Read(ctx)
+			msgType, data, readErr := conn.Read(ctx)
 			if readErr != nil {
 				_ = hijacked.CloseWrite()
 				return
 			}
-			var resize struct {
-				Width  int `json:"width"`
-				Height int `json:"height"`
-			}
-			if json.Unmarshal(data, &resize) == nil && resize.Width > 0 && resize.Height > 0 {
-				_ = rs.DockerClient.ContainerResize(ctx, containerName, container.ResizeOptions{
-					Width:  uint(resize.Width),
-					Height: uint(resize.Height),
-				})
+			if msgType == websocket.MessageText {
+				var resize struct {
+					Width  int `json:"width"`
+					Height int `json:"height"`
+				}
+				if json.Unmarshal(data, &resize) == nil && resize.Width > 0 && resize.Height > 0 {
+					_ = rs.DockerClient.ContainerResize(ctx, containerName, container.ResizeOptions{
+						Width:  uint(resize.Width),
+						Height: uint(resize.Height),
+					})
+				}
 				continue
 			}
 			if _, err := io.Copy(hijacked.Conn, bytes.NewReader(data)); err != nil {
