@@ -23,17 +23,22 @@ func majorForMC(mcVersion string) int {
 	if len(parts) < 2 {
 		return 21
 	}
+	major, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 21
+	}
+	if major >= 2 {
+		return 25
+	}
 	minor, err := strconv.Atoi(parts[1])
 	if err != nil {
 		return 21
 	}
 	switch {
-	case minor >= 21:
-		return 21
 	case minor >= 17:
-		return 17
+		return 21
 	default:
-		return 11
+		return 17
 	}
 }
 
