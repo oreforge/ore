@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -19,9 +18,8 @@ func newStatusCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show the status of all servers in the network",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			jsonOut, _ := cmd.Flags().GetBool("json")
-
 			var (
 				status *deploy.NetworkStatus
 				err    error
@@ -47,22 +45,11 @@ func newStatusCmd() *cobra.Command {
 				return err
 			}
 
-			if jsonOut {
-				return printJSON(status)
-			}
 			return printTable(status)
 		},
 	}
 
-	cmd.Flags().Bool("json", false, "output as JSON")
-
 	return cmd
-}
-
-func printJSON(status *deploy.NetworkStatus) error {
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	return enc.Encode(status)
 }
 
 func printTable(status *deploy.NetworkStatus) error {

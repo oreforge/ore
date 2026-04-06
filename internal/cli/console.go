@@ -12,9 +12,10 @@ import (
 
 func newConsoleCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "console <server>",
-		Short: "Attach to a running server console",
-		Args:  cobra.ExactArgs(1),
+		Use:     "console <server>",
+		Short:   "Attach to a running server console",
+		Example: "ore console survival",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if localMode {
 				dockerClient, err := docker.New(cmd.Context())
@@ -31,7 +32,7 @@ func newConsoleCmd() *cobra.Command {
 					Logs:   true,
 				})
 				if err != nil {
-					return fmt.Errorf("attaching to container %s: %w", args[0], err)
+					return fmt.Errorf("attaching to server %s: %w", args[0], err)
 				}
 				defer hijacked.Close()
 

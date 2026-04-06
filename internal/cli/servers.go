@@ -55,6 +55,7 @@ func newServersAddCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:         "add <name>",
 		Short:       "Add or update a remote server",
+		Example:     "ore servers add myserver --addr 192.168.1.10:9090 --token mytoken",
 		Args:        cobra.ExactArgs(1),
 		Annotations: map[string]string{"skip-engine": "true"},
 		RunE: func(cmd *cobra.Command, args []string) error {

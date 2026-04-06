@@ -11,7 +11,10 @@ import (
 func newUpCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "up",
-		Short: "Build images and start the network",
+		Short: "Build and start all servers",
+		Example: `ore up
+ore up --no-cache --force`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			noCache, _ := cmd.Flags().GetBool("no-cache")
 			force, _ := cmd.Flags().GetBool("force")
@@ -57,7 +60,7 @@ func newUpCmd() *cobra.Command {
 	}
 
 	cmd.Flags().Bool("no-cache", false, "skip local binary cache and re-download everything")
-	cmd.Flags().Bool("force", false, "force restart all containers even if unchanged")
+	cmd.Flags().Bool("force", false, "force restart all servers even if unchanged")
 
 	return cmd
 }

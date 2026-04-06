@@ -1,6 +1,6 @@
 # ore
 
-Infrastructure-as-code for game server networks. Define servers in YAML, and ore builds Docker images, manages containers, networks, and volumes.
+Infrastructure-as-code for game server networks. Define servers in YAML, and ore builds, deploys, and manages them.
 
 ## Install
 
@@ -57,22 +57,26 @@ services:
 ```
 
 ```sh
-ore up             # build images and start all servers
-ore status         # show container states
+ore up             # build and start all servers
+ore status         # show server status
 ore console lobby  # attach to server console (ctrl+c to detach)
-ore down           # stop everything
+ore down           # stop and remove all servers
 ```
 
 ## Commands
 
 ```
-ore up [--no-cache] [--force]  Build images and start the network
-ore down                      Stop all containers and remove the network
-ore build [--no-cache]        Build Docker images without starting
-ore status [--json]           Show server status
+ore up [--no-cache] [--force]  Build and start all servers
+ore down                      Stop and remove all servers
+ore build [--no-cache]        Build all server images
+ore status                    Show server status
 ore console <server>          Attach to a server console
-ore prune <target>            Remove resources (all, containers, images, volumes)
-ore clean [--cache|--builds]  Remove .ore/ cache and build artifacts
+ore clean all                 Remove all servers, images, data, and build cache
+ore clean cache               Remove cached binaries
+ore clean builds              Remove build artifacts
+ore clean servers             Stop and remove all running servers
+ore clean images              Remove unused server images
+ore clean data                Remove server data volumes
 ore servers list              List configured servers
 ore servers add <name>        Add a remote server (--addr, --token required, --project optional)
 ore servers remove <name>     Remove a remote server
@@ -93,7 +97,7 @@ Global flags: `-f <path>` spec file (default `ore.yaml`), `-v` verbose logging.
 ## Spec Reference
 
 ```yaml
-network: string             # Docker network name
+network: string             # network name
 
 gitops:                     # GitOps configuration (optional)
   poll:
@@ -101,11 +105,11 @@ gitops:                     # GitOps configuration (optional)
     interval: duration      # poll interval, e.g. 5m, 1h (default: 5m)
 
 servers:
-  - name: string            # container name
+  - name: string            # server name
     dir: string             # path to server data directory
     software: string        # name:version (e.g. paper:1.21.11, gate:0.62.4)
-    ports:                  # host:container port mappings (optional)
-      - "host:container"
+    ports:                  # host:server port mappings (optional)
+      - "host:server"
     memory: string          # memory limit, e.g. 512M, 2G (optional)
     cpu: string             # CPU limit, e.g. 1.5 (optional)
     jvmFlags: [ string ]    # JVM flags for Java servers (optional)
@@ -113,23 +117,23 @@ servers:
       KEY: value
     volumes:                # named volumes (optional)
       - name: string
-        target: string      # mount path inside container
+        target: string      # mount path inside the server
 
 services:
-  - name: string            # container name
-    image: string           # Docker image (e.g. postgres:16, redis:7)
-    ports:                  # host:container port mappings (optional)
-      - "host:container"
+  - name: string            # service name
+    image: string           # image (e.g. postgres:16, redis:7)
+    ports:                  # host:service port mappings (optional)
+      - "host:service"
     env:                    # environment variables (optional)
       KEY: value
     volumes:                # named volumes (optional)
       - name: string
-        target: string      # mount path inside container
+        target: string      # mount path inside the service
 ```
 
-All containers join the same Docker bridge network and can reach each other by name. Services start before servers and stop after them.
+All servers and services join the same network and can reach each other by name. Services start before servers and stop after them.
 
-Ports are only needed for external access from the host. Internal container-to-container communication works on any port via Docker DNS (e.g. `database:5432`).
+Ports are only needed for external access from the host. Internal communication works on any port using the server or service name (e.g. `database:5432`).
 
 Values support `${VAR}` environment variable expansion.
 

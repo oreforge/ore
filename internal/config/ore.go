@@ -81,27 +81,17 @@ func SaveServer(name string, srv ServerConfig) error {
 func RemoveServer(name string) error {
 	name = strings.ToLower(name)
 
-	all := oreV.AllSettings()
-	servers, _ := all["servers"].(map[string]any)
-	if servers == nil {
-		return fmt.Errorf("server %q not found", name)
-	}
+	servers := oreV.GetStringMap("servers")
 	if _, exists := servers[name]; !exists {
 		return fmt.Errorf("server %q not found", name)
 	}
 	delete(servers, name)
-	all["servers"] = servers
+	oreV.Set("servers", servers)
 
-	if ctx, _ := all["context"].(string); ctx == name {
-		all["context"] = ""
+	if oreV.GetString("context") == name {
+		oreV.Set("context", "")
 	}
-
-	fresh := viper.New()
-	fresh.SetConfigType("yaml")
-	for k, val := range all {
-		fresh.Set(k, val)
-	}
-	return fresh.WriteConfigAs(oreConfigPath())
+	return saveOre()
 }
 
 func ResolveRemote(cfg *OreConfig) (addr, token, project string, ok bool) {

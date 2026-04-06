@@ -12,7 +12,7 @@ func newVersionCmd(info BuildInfo) *cobra.Command {
 		Use:         "version",
 		Short:       "Print the ore version",
 		Annotations: map[string]string{"skip-engine": "true"},
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			fmt.Printf("ore %s (%s/%s)\n", info.Version, runtime.GOOS, runtime.GOARCH)
 			if info.Commit != "" {
 				fmt.Printf("commit: %s\n", info.Commit)
@@ -20,6 +20,7 @@ func newVersionCmd(info BuildInfo) *cobra.Command {
 			if info.BuildDate != "" {
 				fmt.Printf("built: %s\n", info.BuildDate)
 			}
+			return nil
 		},
 	}
 }

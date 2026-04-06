@@ -65,9 +65,10 @@ func newProjectsListCmd() *cobra.Command {
 
 func newProjectsAddCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "add <url>",
-		Short: "Clone a project from a git repository",
-		Args:  cobra.ExactArgs(1),
+		Use:     "add <url>",
+		Short:   "Clone a project from a git repository",
+		Example: "ore projects add https://github.com/user/repo.git",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r, err := requireRemote()
 			if err != nil {
@@ -93,7 +94,7 @@ func newProjectsAddCmd() *cobra.Command {
 func newProjectsRemoveCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "remove <name>",
-		Short: "Stop containers and remove a project",
+		Short: "Stop servers and remove a project",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r, err := requireRemote()

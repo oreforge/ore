@@ -78,7 +78,8 @@ func (be *buildEnv) buildAll(ctx context.Context) (map[string]build.Result, erro
 func newBuildCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "build",
-		Short: "Build Docker images for all servers",
+		Short: "Build all server images",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			noCache, _ := cmd.Flags().GetBool("no-cache")
 			if localMode {

@@ -21,17 +21,17 @@ type NetworkStatus struct {
 
 type ServerStatus struct {
 	Name      string          `json:"name" doc:"Server name from ore.yaml"`
-	Container ContainerStatus `json:"container" doc:"Container runtime status"`
+	Container ContainerStatus `json:"container" doc:"Runtime status"`
 }
 
 type ContainerStatus struct {
-	Name         string         `json:"name" doc:"Container name"`
-	State        ContainerState `json:"state" doc:"Container state (running, exited, etc.)"`
+	Name         string         `json:"name" doc:"Server name"`
+	State        ContainerState `json:"state" doc:"Server state (running, exited, etc.)"`
 	Health       HealthState    `json:"health" doc:"Health check status"`
-	Image        string         `json:"image" doc:"Docker image tag"`
+	Image        string         `json:"image" doc:"Image tag"`
 	Ports        []PortBinding  `json:"ports,omitempty" doc:"Exposed port mappings"`
-	StartedAt    time.Time      `json:"started_at,omitempty" doc:"Container start time"`
-	Uptime       time.Duration  `json:"uptime,omitempty" doc:"Time since container started"`
+	StartedAt    time.Time      `json:"started_at,omitempty" doc:"Start time"`
+	Uptime       time.Duration  `json:"uptime,omitempty" doc:"Time since started"`
 	RestartCount int            `json:"restart_count" doc:"Number of restarts"`
 	ExitCode     int            `json:"exit_code" doc:"Last exit code"`
 	Memory       int64          `json:"memory_bytes" doc:"Memory limit in bytes"`
@@ -144,7 +144,7 @@ func (h *HealthState) UnmarshalJSON(data []byte) error {
 
 type PortBinding struct {
 	HostPort      int    `json:"host_port" doc:"Port on the host"`
-	ContainerPort int    `json:"container_port" doc:"Port inside the container"`
+	ContainerPort int    `json:"container_port" doc:"Server port"`
 	Protocol      string `json:"protocol" doc:"Protocol (tcp/udp)"`
 }
 

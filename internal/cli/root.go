@@ -29,7 +29,7 @@ func Run(args []string, info BuildInfo) int {
 	root := &cobra.Command{
 		Use:   "ore",
 		Short: "Infrastructure-as-code for game server networks",
-		Long:  "Infrastructure-as-code for game server networks\n\nConfig:\n" + config.OreConfigFile(),
+		Long:  "Infrastructure-as-code for game server networks",
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			var err error
 			cfg, err = config.LoadOre(cmd.Flags())
@@ -76,7 +76,6 @@ func Run(args []string, info BuildInfo) int {
 		newDownCmd(),
 		newStatusCmd(),
 		newBuildCmd(),
-		newPruneCmd(),
 		newCleanCmd(),
 		newConsoleCmd(),
 		newProjectsCmd(),
@@ -91,6 +90,7 @@ func Run(args []string, info BuildInfo) int {
 		return 1
 	}
 
+	root.Long = buildLongDescription(cfg)
 	root.SetArgs(args[1:])
 	err = root.Execute()
 	if remoteClient != nil {
@@ -101,4 +101,18 @@ func Run(args []string, info BuildInfo) int {
 		return 1
 	}
 	return 0
+}
+
+func buildLongDescription(cfg *config.OreConfig) string {
+	desc := "Infrastructure-as-code for game server networks\n\n"
+	desc += "Config:  " + config.OreConfigFile() + "\n"
+
+	if cfg.Context != "" {
+		desc += "Server:  " + cfg.Context + "\n"
+		if srv, ok := cfg.Servers[cfg.Context]; ok && srv.Project != "" {
+			desc += "Project: " + srv.Project
+		}
+	}
+
+	return desc
 }
