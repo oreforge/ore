@@ -3,6 +3,7 @@ package velocity
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/oreforge/ore/internal/software"
@@ -16,36 +17,69 @@ func New() *Provider {
 
 type Provider struct{}
 
-type buildsResponse struct {
-	Builds []struct {
-		Build     int `json:"build"`
-		Downloads struct {
-			Application struct {
-				Name   string `json:"name"`
-				Sha256 string `json:"sha256"`
-			} `json:"application"`
-		} `json:"downloads"`
-	} `json:"builds"`
+type build struct {
+	ID        int                 `json:"id"`
+	Channel   string              `json:"channel"`
+	Downloads map[string]download `json:"downloads"`
+}
+
+type download struct {
+	Name      string            `json:"name"`
+	Checksums map[string]string `json:"checksums"`
+	URL       string            `json:"url"`
+}
+
+var channelMap = map[string]string{
+	"experimental": "ALPHA",
+	"beta":         "BETA",
+	"stable":       "STABLE",
+}
+
+func parseVersionChannel(version string) (string, string) {
+	if i := strings.LastIndex(version, "@"); i >= 0 {
+		return version[:i], version[i+1:]
+	}
+	return version, ""
+}
+
+func selectBuild(builds []build, channel string) (build, error) {
+	if channel == "" {
+		return builds[len(builds)-1], nil
+	}
+	apiChannel, ok := channelMap[channel]
+	if !ok {
+		return build{}, fmt.Errorf("unknown channel %q (valid: experimental, beta, stable)", channel)
+	}
+	for i := len(builds) - 1; i >= 0; i-- {
+		if builds[i].Channel == apiChannel {
+			return builds[i], nil
+		}
+	}
+	return build{}, fmt.Errorf("no %s channel build found", channel)
 }
 
 func (p *Provider) Resolve(ctx context.Context, version string) (*software.Artifact, error) {
-	url := fmt.Sprintf("https://api.papermc.io/v2/projects/velocity/versions/%s/builds", version)
-	var resp buildsResponse
-	if err := software.GetJSON(ctx, url, &resp); err != nil {
+	version, channel := parseVersionChannel(version)
+	url := fmt.Sprintf("https://fill.papermc.io/v3/projects/velocity/versions/%s/builds", version)
+	var builds []build
+	if err := software.GetJSON(ctx, url, &builds); err != nil {
 		return nil, err
 	}
-	if len(resp.Builds) == 0 {
+	if len(builds) == 0 {
 		return nil, fmt.Errorf("no builds found for velocity %s", version)
 	}
-	latest := resp.Builds[len(resp.Builds)-1]
-	downloadURL := fmt.Sprintf(
-		"https://api.papermc.io/v2/projects/velocity/versions/%s/builds/%d/downloads/%s",
-		version, latest.Build, latest.Downloads.Application.Name,
-	)
+	selected, err := selectBuild(builds, channel)
+	if err != nil {
+		return nil, fmt.Errorf("velocity %s: %w", version, err)
+	}
+	dl, ok := selected.Downloads["server:default"]
+	if !ok {
+		return nil, fmt.Errorf("no server download found for velocity %s build %d", version, selected.ID)
+	}
 	return &software.Artifact{
 		Version: version,
-		URL:     downloadURL,
-		SHA256:  latest.Downloads.Application.Sha256,
+		URL:     dl.URL,
+		SHA256:  dl.Checksums["sha256"],
 		Runtime: software.Runtime{
 			BaseImage:  "eclipse-temurin:21-jre-alpine",
 			BinaryName: "server.jar",
