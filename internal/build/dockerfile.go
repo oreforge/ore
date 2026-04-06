@@ -33,7 +33,7 @@ COPY data/ /data/
 WORKDIR /data
 EXPOSE 25565
 %s
-ENTRYPOINT ["tini", "--", "/opt/ore/entrypoint.sh"]%s
+ENTRYPOINT ["tini", "-s", "--", "/opt/ore/entrypoint.sh"]%s
 `, opts.Runtime.BaseImage, opts.Runtime.BinaryName, opts.Runtime.BinaryName,
 		dockerHealthcheck(opts.HealthRetries), cmdLine)
 }
@@ -46,7 +46,7 @@ COPY data/ /data/
 WORKDIR /data
 EXPOSE 25565
 %s
-ENTRYPOINT ["tini", "--", "/opt/ore/%s"]
+ENTRYPOINT ["tini", "-s", "--", "/opt/ore/%s"]
 `, opts.Runtime.BaseImage, opts.Runtime.BinaryName, opts.Runtime.BinaryName,
 		dockerHealthcheck(opts.HealthRetries), opts.Runtime.BinaryName)
 }
