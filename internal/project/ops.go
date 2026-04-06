@@ -41,11 +41,11 @@ func (t PruneTarget) String() string {
 	case PruneAll:
 		return "all"
 	case PruneContainers:
-		return "containers"
+		return "servers"
 	case PruneImages:
 		return "images"
 	case PruneVolumes:
-		return "volumes"
+		return "data"
 	default:
 		return fmt.Sprintf("unknown(%d)", int(t))
 	}
@@ -226,7 +226,7 @@ func ExecutePrune(ctx context.Context, deployer *deploy.Deployer, s *spec.Networ
 	case PruneAll:
 		var errs []error
 		if err := deployer.Down(ctx, s); err != nil {
-			errs = append(errs, fmt.Errorf("stopping containers: %w", err))
+			errs = append(errs, fmt.Errorf("stopping servers: %w", err))
 		}
 		if err := deployer.PruneImages(ctx, s); err != nil {
 			errs = append(errs, fmt.Errorf("pruning images: %w", err))
@@ -239,7 +239,7 @@ func ExecutePrune(ctx context.Context, deployer *deploy.Deployer, s *spec.Networ
 				errs = append(errs, fmt.Errorf("cleaning .ore directory: %w", cleanErr))
 			}
 		}
-		logger.Info("pruned all resources")
+		logger.Info("cleaned all resources")
 		return errors.Join(errs...)
 	case PruneContainers:
 		return deployer.Down(ctx, s)

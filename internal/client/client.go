@@ -99,7 +99,7 @@ func (c *Client) Console(ctx context.Context, serverName string) error {
 	}
 
 	q := url.Values{}
-	q.Set("container", serverName)
+	q.Set("server", serverName)
 	q.Set("cols", strconv.Itoa(cols))
 	q.Set("rows", strconv.Itoa(rows))
 

@@ -54,7 +54,7 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 	)
 	fuego.DeleteStd(projects, "/{name}", rs.remove,
 		option.Summary("Remove a project"),
-		option.Description("Stops all containers and removes the project directory."),
+		option.Description("Stops all servers and removes the project directory."),
 		option.Tags("Projects"),
 		option.OperationID("removeProject"),
 		option.Path("name", "Project name"),
@@ -77,13 +77,13 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 	)
 	fuego.Get(ops, "/status", rs.status,
 		option.Summary("Get network status"),
-		option.Description("Returns the status of all containers in the project network."),
+		option.Description("Returns the status of all servers in the project network."),
 		option.Tags("Projects"),
 		option.OperationID("getStatus"),
 		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
 	)
 	fuego.PostStd(ops, "/up", rs.up,
-		option.Summary("Start the network"),
+		option.Summary("Start all servers"),
 		option.OverrideDescription(ndjsonDesc),
 		option.Tags("Projects"),
 		option.OperationID("up"),
@@ -93,7 +93,7 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
 	)
 	fuego.PostStd(ops, "/down", rs.down,
-		option.Summary("Stop the network"),
+		option.Summary("Stop all servers"),
 		option.OverrideDescription(ndjsonDesc),
 		option.Tags("Projects"),
 		option.OperationID("down"),
@@ -111,7 +111,7 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
 	)
 	fuego.PostStd(ops, "/prune", rs.prune,
-		option.Summary("Prune resources"),
+		option.Summary("Clean resources"),
 		option.OverrideDescription(ndjsonDesc),
 		option.Tags("Projects"),
 		option.OperationID("prune"),
@@ -135,10 +135,10 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 		option.Description("WebSocket endpoint for interactive server console. Terminal I/O uses binary frames; send JSON text frames with {width, height} to resize."),
 		option.Tags("Projects"),
 		option.OperationID("console"),
-		option.Query("container", "Container name to attach to"),
+		option.Query("server", "Server name to attach to"),
 		option.Query("cols", "Initial terminal width (default 80)"),
 		option.Query("rows", "Initial terminal height (default 24)"),
-		option.AddResponse(http.StatusBadRequest, "Missing container parameter", fuego.Response{Type: fuego.HTTPError{}}),
+		option.AddResponse(http.StatusBadRequest, "Missing server parameter", fuego.Response{Type: fuego.HTTPError{}}),
 	)
 }
 
@@ -205,7 +205,7 @@ func (rs ProjectResource) remove(w http.ResponseWriter, r *http.Request) {
 
 	rs.PM.StopProjectPoll(name)
 	if err := rs.PM.Down(r.Context(), name, rs.Logger); err != nil {
-		rs.Logger.Warn("failed to stop containers during removal", "project", name, "error", err)
+		rs.Logger.Warn("failed to stop servers during removal", "project", name, "error", err)
 	}
 
 	projectDir := filepath.Join(rs.PM.ProjectsDir(), name)
@@ -325,11 +325,11 @@ func (rs ProjectResource) prune(w http.ResponseWriter, r *http.Request) {
 
 	var target project.PruneTarget
 	switch body.Target {
-	case "containers":
+	case "servers":
 		target = project.PruneContainers
 	case "images":
 		target = project.PruneImages
-	case "volumes":
+	case "data":
 		target = project.PruneVolumes
 	default:
 		target = project.PruneAll
@@ -363,9 +363,9 @@ func (rs ProjectResource) clean(w http.ResponseWriter, r *http.Request) {
 }
 
 func (rs ProjectResource) console(w http.ResponseWriter, r *http.Request) {
-	containerName := r.URL.Query().Get("container")
-	if containerName == "" {
-		errs.Write(w, http.StatusBadRequest, "missing container query parameter")
+	serverName := r.URL.Query().Get("server")
+	if serverName == "" {
+		errs.Write(w, http.StatusBadRequest, "missing server query parameter")
 		return
 	}
 
@@ -392,7 +392,7 @@ func (rs ProjectResource) console(w http.ResponseWriter, r *http.Request) {
 
 	logger := rs.Logger
 
-	hijacked, err := rs.DockerClient.ContainerAttach(r.Context(), containerName, container.AttachOptions{
+	hijacked, err := rs.DockerClient.ContainerAttach(r.Context(), serverName, container.AttachOptions{
 		Stream: true,
 		Stdin:  true,
 		Stdout: true,
@@ -400,12 +400,12 @@ func (rs ProjectResource) console(w http.ResponseWriter, r *http.Request) {
 		Logs:   true,
 	})
 	if err != nil {
-		logger.Error("console: attaching to container", "container", containerName, "error", err)
+		logger.Error("console: attaching to server", "server", serverName, "error", err)
 		return
 	}
 	defer hijacked.Close()
 
-	_ = rs.DockerClient.ContainerResize(r.Context(), containerName, container.ResizeOptions{
+	_ = rs.DockerClient.ContainerResize(r.Context(), serverName, container.ResizeOptions{
 		Width:  uint(cols),
 		Height: uint(rows),
 	})
@@ -433,7 +433,7 @@ func (rs ProjectResource) console(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			if readErr != nil {
-				_ = conn.Close(websocket.StatusNormalClosure, "container process exited")
+				_ = conn.Close(websocket.StatusNormalClosure, "server process exited")
 				return
 			}
 		}
@@ -455,7 +455,7 @@ func (rs ProjectResource) console(w http.ResponseWriter, r *http.Request) {
 					Height int `json:"height"`
 				}
 				if json.Unmarshal(data, &resize) == nil && resize.Width > 0 && resize.Height > 0 {
-					_ = rs.DockerClient.ContainerResize(ctx, containerName, container.ResizeOptions{
+					_ = rs.DockerClient.ContainerResize(ctx, serverName, container.ResizeOptions{
 						Width:  uint(resize.Width),
 						Height: uint(resize.Height),
 					})

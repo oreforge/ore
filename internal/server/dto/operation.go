@@ -10,7 +10,7 @@ type UpRequest struct {
 }
 
 type PruneRequest struct {
-	Target string `json:"target,omitempty" example:"all"`
+	Target string `json:"target,omitempty" example:"all" doc:"Target to clean (all, servers, images, data)"`
 }
 
 type CleanRequest struct {
