@@ -6,7 +6,7 @@ Infrastructure-as-code for game server networks. Define servers in YAML, and ore
 
 ```sh
 # ore cli for local desktop (enough to get started and try ore)
-go install github.com/oreforge/ore/cmd/ore@latest
+GONOSUMCHECK=github.com/oreforge/ore GOFLAGS=-mod=mod GONOSUMDB=github.com/oreforge/ore GOPROXY=direct go install github.com/oreforge/ore/cmd/ore@latest
 # ored for the server (optional, only needed for real production use)
 GONOSUMCHECK=github.com/oreforge/ore GOFLAGS=-mod=mod GONOSUMDB=github.com/oreforge/ore GOPROXY=direct go install github.com/oreforge/ore/cmd/ored@latest
 ```
