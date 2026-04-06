@@ -10,36 +10,36 @@ import (
 	"github.com/oreforge/ore/internal/config"
 )
 
-func newServersCmd() *cobra.Command {
+func newNodesCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "servers",
-		Short: "Manage remote server connections",
+		Use:   "nodes",
+		Short: "Manage remote node connections",
 	}
 
 	cmd.AddCommand(
-		newServersListCmd(),
-		newServersAddCmd(),
-		newServersRemoveCmd(),
-		newServersUseCmd(),
-		newServersActiveCmd(),
-		newServersShowCmd(),
+		newNodesListCmd(),
+		newNodesAddCmd(),
+		newNodesRemoveCmd(),
+		newNodesUseCmd(),
+		newNodesActiveCmd(),
+		newNodesShowCmd(),
 	)
 
 	return cmd
 }
 
-func newServersListCmd() *cobra.Command {
+func newNodesListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:         "list",
-		Short:       "List configured servers",
+		Short:       "List configured nodes",
 		Annotations: map[string]string{"skip-engine": "true"},
 		RunE: func(_ *cobra.Command, _ []string) error {
-			if len(cfg.Servers) == 0 {
-				fmt.Println("no servers configured")
+			if len(cfg.Nodes) == 0 {
+				fmt.Println("no nodes configured")
 				return nil
 			}
 
-			for _, name := range slices.Sorted(maps.Keys(cfg.Servers)) {
+			for _, name := range slices.Sorted(maps.Keys(cfg.Nodes)) {
 				if name == cfg.Context {
 					fmt.Printf("* %s\n", name)
 				} else {
@@ -51,11 +51,11 @@ func newServersListCmd() *cobra.Command {
 	}
 }
 
-func newServersAddCmd() *cobra.Command {
+func newNodesAddCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:         "add <name>",
-		Short:       "Add or update a remote server",
-		Example:     "ore servers add myserver --addr 192.168.1.10:9090 --token mytoken",
+		Short:       "Add or update a remote node",
+		Example:     "ore nodes add mynode --addr 192.168.1.10:9090 --token mytoken",
 		Args:        cobra.ExactArgs(1),
 		Annotations: map[string]string{"skip-engine": "true"},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -63,7 +63,7 @@ func newServersAddCmd() *cobra.Command {
 			token, _ := cmd.Flags().GetString("token")
 			project, _ := cmd.Flags().GetString("project")
 
-			if err := config.SaveServer(args[0], config.ServerConfig{
+			if err := config.SaveNode(args[0], config.NodeConfig{
 				Addr:    addr,
 				Token:   token,
 				Project: project,
@@ -71,12 +71,12 @@ func newServersAddCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Printf("added server %q\n", args[0])
+			fmt.Printf("added node %q\n", args[0])
 			return nil
 		},
 	}
 
-	cmd.Flags().String("addr", "", "server address (host:port)")
+	cmd.Flags().String("addr", "", "node address (host:port)")
 	cmd.Flags().String("token", "", "authentication token")
 	cmd.Flags().String("project", "", "default project (optional)")
 
@@ -86,52 +86,52 @@ func newServersAddCmd() *cobra.Command {
 	return cmd
 }
 
-func newServersRemoveCmd() *cobra.Command {
+func newNodesRemoveCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:         "remove <name>",
-		Short:       "Remove a server",
+		Short:       "Remove a node",
 		Args:        cobra.ExactArgs(1),
 		Annotations: map[string]string{"skip-engine": "true"},
 		RunE: func(_ *cobra.Command, args []string) error {
-			if err := config.RemoveServer(args[0]); err != nil {
+			if err := config.RemoveNode(args[0]); err != nil {
 				return err
 			}
 
-			fmt.Printf("removed server %q\n", args[0])
+			fmt.Printf("removed node %q\n", args[0])
 			return nil
 		},
 	}
 }
 
-func newServersUseCmd() *cobra.Command {
+func newNodesUseCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:         "use <name>",
-		Short:       "Set the active server",
+		Short:       "Set the active node",
 		Args:        cobra.ExactArgs(1),
 		Annotations: map[string]string{"skip-engine": "true"},
 		RunE: func(_ *cobra.Command, args []string) error {
-			if _, exists := cfg.Servers[args[0]]; !exists {
-				return fmt.Errorf("server %q not found", args[0])
+			if _, exists := cfg.Nodes[args[0]]; !exists {
+				return fmt.Errorf("node %q not found", args[0])
 			}
 
 			if err := config.SetContext(args[0]); err != nil {
 				return err
 			}
 
-			fmt.Printf("switched to server %q\n", args[0])
+			fmt.Printf("switched to node %q\n", args[0])
 			return nil
 		},
 	}
 }
 
-func newServersActiveCmd() *cobra.Command {
+func newNodesActiveCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:         "active",
-		Short:       "Show the active server",
+		Short:       "Show the active node",
 		Annotations: map[string]string{"skip-engine": "true"},
 		RunE: func(_ *cobra.Command, _ []string) error {
 			if cfg.Context == "" {
-				fmt.Println("no active server")
+				fmt.Println("no active node")
 			} else {
 				fmt.Println(cfg.Context)
 			}
@@ -140,23 +140,23 @@ func newServersActiveCmd() *cobra.Command {
 	}
 }
 
-func newServersShowCmd() *cobra.Command {
+func newNodesShowCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:         "show <name>",
-		Short:       "Show server details",
+		Short:       "Show node details",
 		Args:        cobra.ExactArgs(1),
 		Annotations: map[string]string{"skip-engine": "true"},
 		RunE: func(_ *cobra.Command, args []string) error {
-			srv, exists := cfg.Servers[args[0]]
+			node, exists := cfg.Nodes[args[0]]
 			if !exists {
-				return fmt.Errorf("server %q not found", args[0])
+				return fmt.Errorf("node %q not found", args[0])
 			}
 
 			fmt.Printf("Name:    %s\n", args[0])
-			fmt.Printf("Addr:    %s\n", srv.Addr)
-			fmt.Printf("Token:   %s\n", maskToken(srv.Token))
-			if srv.Project != "" {
-				fmt.Printf("Project: %s\n", srv.Project)
+			fmt.Printf("Addr:    %s\n", node.Addr)
+			fmt.Printf("Token:   %s\n", maskToken(node.Token))
+			if node.Project != "" {
+				fmt.Printf("Project: %s\n", node.Project)
 			}
 			return nil
 		},

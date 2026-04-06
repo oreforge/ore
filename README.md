@@ -77,12 +77,12 @@ ore clean builds              Remove build artifacts
 ore clean servers             Stop and remove all running servers
 ore clean images              Remove unused server images
 ore clean data                Remove server data volumes
-ore servers list              List configured servers
-ore servers add <name>        Add a remote server (--addr, --token required, --project optional)
-ore servers remove <name>     Remove a remote server
-ore servers use <name>        Set the active server
-ore servers active            Show the active server
-ore servers show <name>       Show server details
+ore nodes list                List configured nodes
+ore nodes add <name>          Add a remote node (--addr, --token required, --project optional)
+ore nodes remove <name>       Remove a remote node
+ore nodes use <name>          Set the active node
+ore nodes active              Show the active node
+ore nodes show <name>         Show node details
 ore projects list             List remote projects
 ore projects add <url>        Clone a project from a git repository
 ore projects remove <name>    Remove a project
@@ -148,11 +148,11 @@ Values support `${VAR}` environment variable expansion.
 ## Remote Mode
 
 `ored` is a daemon that exposes the ore engine as a REST API. The CLI auto-detects the mode: if `ore.yaml` exists
-locally it runs locally, otherwise it connects to the configured remote server.
+locally it runs locally, otherwise it connects to the configured remote node.
 
 All commands work identically in both modes. The console uses WebSocket for real-time bidirectional I/O.
 
-### Server Setup
+### Daemon Setup
 
 ```sh
 ored
@@ -174,14 +174,14 @@ Projects are managed via `ore projects` commands and stored as subdirectories in
 
 ### Client Setup
 
-Add the remote server and set it as active:
+Add the remote node and set it as active:
 
 ```sh
-ore servers add prod --addr 123.321.187.123:9090 --token <token from ored config>
-ore servers use prod
+ore nodes add prod --addr 123.321.187.123:9090 --token <token from ored config>
+ore nodes use prod
 ```
 
-Then manage projects and run commands against the remote server:
+Then manage projects and run commands against the remote node:
 
 ```sh
 ore projects list
@@ -191,7 +191,7 @@ ore status
 ore console lobby
 ```
 
-Multiple servers can be configured and switched between. Each server remembers its active project independently.
+Multiple nodes can be configured and switched between. Each node remembers its active project independently.
 
 ## GitOps
 
@@ -229,21 +229,21 @@ log_level: info
 verbose: false
 context: prod
 
-servers:
+nodes:
   prod:
     addr: myserver.example.com:9090
     token: <token>
     project: mynetwork
 ```
 
-| Key                      | Env             | Default | Description              |
-|--------------------------|-----------------|---------|--------------------------|
-| `log_level`              | `ORE_LOG_LEVEL` | `info`  | Log level                |
-| `verbose`                | `ORE_VERBOSE`   | `false` | Debug logging            |
-| `context`                | `ORE_CONTEXT`   |         | Active server name       |
-| `servers.<name>.addr`    |                 |         | Server address           |
-| `servers.<name>.token`   |                 |         | Auth token               |
-| `servers.<name>.project` |                 |         | Active project on server |
+| Key                    | Env             | Default | Description            |
+|------------------------|-----------------|---------|------------------------|
+| `log_level`            | `ORE_LOG_LEVEL` | `info`  | Log level              |
+| `verbose`              | `ORE_VERBOSE`   | `false` | Debug logging          |
+| `context`              | `ORE_CONTEXT`   |         | Active node name       |
+| `nodes.<name>.addr`    |                 |         | Node address           |
+| `nodes.<name>.token`   |                 |         | Auth token             |
+| `nodes.<name>.project` |                 |         | Active project on node |
 
 ### ored
 

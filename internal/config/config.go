@@ -1,13 +1,13 @@
 package config
 
 type OreConfig struct {
-	LogLevel string                  `mapstructure:"log_level"`
-	Verbose  bool                    `mapstructure:"verbose"`
-	Context  string                  `mapstructure:"context"`
-	Servers  map[string]ServerConfig `mapstructure:"servers"`
+	LogLevel string                `mapstructure:"log_level"`
+	Verbose  bool                  `mapstructure:"verbose"`
+	Context  string                `mapstructure:"context"`
+	Nodes    map[string]NodeConfig `mapstructure:"nodes"`
 }
 
-type ServerConfig struct {
+type NodeConfig struct {
 	Addr    string `mapstructure:"addr"`
 	Token   string `mapstructure:"token"`
 	Project string `mapstructure:"project"`

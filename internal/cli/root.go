@@ -59,7 +59,7 @@ func Run(args []string, info BuildInfo) int {
 					return fmt.Errorf("connecting to ored: %w", remoteErr)
 				}
 			} else {
-				return fmt.Errorf("no %s found and no remote server configured", specFile)
+				return fmt.Errorf("no %s found and no remote node configured", specFile)
 			}
 
 			return nil
@@ -79,7 +79,7 @@ func Run(args []string, info BuildInfo) int {
 		newCleanCmd(),
 		newConsoleCmd(),
 		newProjectsCmd(),
-		newServersCmd(),
+		newNodesCmd(),
 		newVersionCmd(info),
 	)
 
@@ -108,9 +108,9 @@ func buildLongDescription(cfg *config.OreConfig) string {
 	desc += "Config:  " + config.OreConfigFile() + "\n"
 
 	if cfg.Context != "" {
-		desc += "Server:  " + cfg.Context + "\n"
-		if srv, ok := cfg.Servers[cfg.Context]; ok && srv.Project != "" {
-			desc += "Project: " + srv.Project
+		desc += "Node:    " + cfg.Context + "\n"
+		if node, ok := cfg.Nodes[cfg.Context]; ok && node.Project != "" {
+			desc += "Project: " + node.Project
 		}
 	}
 

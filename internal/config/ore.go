@@ -17,7 +17,7 @@ func LoadOre(flags *pflag.FlagSet) (*OreConfig, error) {
 	v.SetDefault("log_level", "info")
 	v.SetDefault("verbose", false)
 	v.SetDefault("context", "")
-	v.SetDefault("servers", map[string]any{})
+	v.SetDefault("nodes", map[string]any{})
 
 	v.SetEnvPrefix("ORE")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
@@ -64,29 +64,29 @@ func SetContext(name string) error {
 func SetProject(project string) error {
 	ctx := oreV.GetString("context")
 	if ctx == "" {
-		return fmt.Errorf("no server selected")
+		return fmt.Errorf("no node selected")
 	}
-	oreV.Set("servers."+ctx+".project", project)
+	oreV.Set("nodes."+ctx+".project", project)
 	return saveOre()
 }
 
-func SaveServer(name string, srv ServerConfig) error {
+func SaveNode(name string, node NodeConfig) error {
 	name = strings.ToLower(name)
-	oreV.Set("servers."+name+".addr", srv.Addr)
-	oreV.Set("servers."+name+".token", srv.Token)
-	oreV.Set("servers."+name+".project", srv.Project)
+	oreV.Set("nodes."+name+".addr", node.Addr)
+	oreV.Set("nodes."+name+".token", node.Token)
+	oreV.Set("nodes."+name+".project", node.Project)
 	return saveOre()
 }
 
-func RemoveServer(name string) error {
+func RemoveNode(name string) error {
 	name = strings.ToLower(name)
 
-	servers := oreV.GetStringMap("servers")
-	if _, exists := servers[name]; !exists {
-		return fmt.Errorf("server %q not found", name)
+	nodes := oreV.GetStringMap("nodes")
+	if _, exists := nodes[name]; !exists {
+		return fmt.Errorf("node %q not found", name)
 	}
-	delete(servers, name)
-	oreV.Set("servers", servers)
+	delete(nodes, name)
+	oreV.Set("nodes", nodes)
 
 	if oreV.GetString("context") == name {
 		oreV.Set("context", "")
@@ -98,11 +98,11 @@ func ResolveRemote(cfg *OreConfig) (addr, token, project string, ok bool) {
 	if cfg.Context == "" {
 		return "", "", "", false
 	}
-	srv, exists := cfg.Servers[cfg.Context]
+	node, exists := cfg.Nodes[cfg.Context]
 	if !exists {
 		return "", "", "", false
 	}
-	return srv.Addr, srv.Token, srv.Project, srv.Addr != ""
+	return node.Addr, node.Token, node.Project, node.Addr != ""
 }
 
 func saveOre() error {
