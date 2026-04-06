@@ -69,38 +69,65 @@ func (d *Deployer) Up(ctx context.Context, cfg *spec.Network, images map[string]
 
 	newState := NewDeployState()
 
+	type serviceResult struct {
+		name       string
+		image      string
+		configHash string
+	}
+
+	var svcMu sync.Mutex
+	var svcResults []serviceResult
+
+	svcG, svcCtx := errgroup.WithContext(ctx)
 	for _, svc := range cfg.Services {
-		configHash := spec.ServiceHash(&svc)
-		name := ServiceContainerName(&svc)
+		svcG.Go(func() error {
+			configHash := spec.ServiceHash(&svc)
+			name := ServiceContainerName(&svc)
 
-		prev := opts.prevService(svc.Name)
-		if d.unchanged(ctx, name, svc.Image, prev.Image, configHash, prev.ConfigHash, opts) {
-			d.logger.Info("service unchanged, skipping", "service", name)
-		} else {
-			if err := EnsureImage(ctx, d.docker, svc.Image, d.logger); err != nil {
-				return nil, fmt.Errorf("pulling image for %s: %w", svc.Name, err)
+			prev := opts.prevService(svc.Name)
+			if d.unchanged(svcCtx, name, svc.Image, prev.Image, configHash, prev.ConfigHash, opts) {
+				d.logger.Info("service unchanged, skipping", "service", name)
+				svcMu.Lock()
+				svcResults = append(svcResults, serviceResult{svc.Name, svc.Image, configHash})
+				svcMu.Unlock()
+				return nil
 			}
 
-			if err := EnsureServiceVolumes(ctx, d.docker, &svc, cfg.Network, d.logger); err != nil {
-				return nil, fmt.Errorf("ensuring volumes for %s: %w", svc.Name, err)
+			if err := EnsureImage(svcCtx, d.docker, svc.Image, d.logger); err != nil {
+				return fmt.Errorf("pulling image for %s: %w", svc.Name, err)
 			}
 
-			if err := StartServiceContainer(ctx, d.docker, &svc, name, cfg.Network, d.logger); err != nil {
-				return nil, fmt.Errorf("starting %s: %w", name, err)
+			if err := EnsureServiceVolumes(svcCtx, d.docker, &svc, cfg.Network, d.logger); err != nil {
+				return fmt.Errorf("ensuring volumes for %s: %w", svc.Name, err)
 			}
 
-			if err := WaitForRunning(ctx, d.docker, name, 10*time.Second); err != nil {
-				return nil, fmt.Errorf("service %s failed to start: %w", name, err)
+			if err := StartServiceContainer(svcCtx, d.docker, &svc, name, cfg.Network, d.logger); err != nil {
+				return fmt.Errorf("starting %s: %w", name, err)
 			}
 
-			if err := WaitForHealthy(ctx, d.docker, name, 60*time.Second, d.logger); err != nil {
+			if err := WaitForRunning(svcCtx, d.docker, name, 10*time.Second); err != nil {
+				return fmt.Errorf("service %s failed to start: %w", name, err)
+			}
+
+			if err := WaitForHealthy(svcCtx, d.docker, name, 60*time.Second, d.logger); err != nil {
 				d.logger.Warn("service health check failed", "service", name, "error", err)
 			}
-		}
 
-		newState.Services[svc.Name] = ServiceState{
-			Image:      svc.Image,
-			ConfigHash: configHash,
+			svcMu.Lock()
+			svcResults = append(svcResults, serviceResult{svc.Name, svc.Image, configHash})
+			svcMu.Unlock()
+			return nil
+		})
+	}
+
+	if err := svcG.Wait(); err != nil {
+		return nil, err
+	}
+
+	for _, r := range svcResults {
+		newState.Services[r.name] = ServiceState{
+			Image:      r.image,
+			ConfigHash: r.configHash,
 		}
 	}
 
@@ -253,19 +280,26 @@ func (d *Deployer) Down(ctx context.Context, cfg *spec.Network) error {
 		d.logger.Warn("failed to stop containers by label", "error", err)
 	}
 
-	for i := len(cfg.Servers) - 1; i >= 0; i-- {
-		srv := cfg.Servers[i]
-		if err := StopContainer(ctx, d.docker, ContainerName(&srv), d.logger); err != nil {
-			d.logger.Debug("stopping container by name", "name", srv.Name, "error", err)
-		}
+	downG, downCtx := errgroup.WithContext(ctx)
+	for _, srv := range cfg.Servers {
+		name := ContainerName(&srv)
+		downG.Go(func() error {
+			if err := StopContainer(downCtx, d.docker, name, d.logger); err != nil {
+				d.logger.Debug("stopping container by name", "name", name, "error", err)
+			}
+			return nil
+		})
 	}
-
-	for i := len(cfg.Services) - 1; i >= 0; i-- {
-		svc := cfg.Services[i]
-		if err := StopContainer(ctx, d.docker, ServiceContainerName(&svc), d.logger); err != nil {
-			d.logger.Debug("stopping service container by name", "name", svc.Name, "error", err)
-		}
+	for _, svc := range cfg.Services {
+		name := ServiceContainerName(&svc)
+		downG.Go(func() error {
+			if err := StopContainer(downCtx, d.docker, name, d.logger); err != nil {
+				d.logger.Debug("stopping service container by name", "name", name, "error", err)
+			}
+			return nil
+		})
 	}
+	_ = downG.Wait()
 
 	if err := RemoveNetwork(ctx, d.docker, cfg.Network, d.logger); err != nil {
 		if !strings.Contains(err.Error(), "not found") {
