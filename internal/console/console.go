@@ -28,10 +28,6 @@ func Run(ctx context.Context, conn Conn) error {
 		}
 	}
 
-	if err := conn.Resize(ctx, width, height); err != nil {
-		return fmt.Errorf("setting terminal size: %w", err)
-	}
-
 	if isTTY {
 		oldState, err := term.MakeRaw(fd)
 		if err != nil {
@@ -46,11 +42,13 @@ func Run(ctx context.Context, conn Conn) error {
 	defer cancel()
 
 	var wg sync.WaitGroup
+	ready := make(chan struct{})
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		defer cancel()
+		close(ready)
 		for {
 			data, err := conn.Read(consoleCtx)
 			if err != nil {
@@ -64,6 +62,11 @@ func Run(ctx context.Context, conn Conn) error {
 			}
 		}
 	}()
+
+	<-ready
+	if err := conn.Resize(ctx, width, height); err != nil {
+		return fmt.Errorf("setting terminal size: %w", err)
+	}
 
 	wg.Add(1)
 	go func() {
