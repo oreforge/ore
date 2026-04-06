@@ -522,6 +522,8 @@ func (rs ProjectResource) webhookInfo(c fuego.ContextNoBody) (dto.WebhookInfoRes
 		Enabled: true,
 		URL:     webhookURL,
 		Secret:  secret,
+		Force:   s.GitOps.Webhook.Force,
+		NoCache: s.GitOps.Webhook.NoCache,
 	}, nil
 }
 

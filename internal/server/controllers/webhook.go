@@ -16,6 +16,18 @@ import (
 	"github.com/oreforge/ore/internal/webhook"
 )
 
+func parseBoolQuery(r *http.Request, key string, fallback bool) bool {
+	v := r.URL.Query().Get(key)
+	switch v {
+	case "true", "1":
+		return true
+	case "false", "0":
+		return false
+	default:
+		return fallback
+	}
+}
+
 type WebhookResource struct {
 	PM     *project.Manager
 	Token  string
@@ -30,6 +42,8 @@ func (rs WebhookResource) MountRoutes(s *fuego.Server) {
 		option.OperationID("webhookDeploy"),
 		option.Path("name", "Project name"),
 		option.Query("secret", "HMAC-derived webhook secret"),
+		option.Query("force", "Force restart all servers even if unchanged (overrides spec default)"),
+		option.Query("no_cache", "Skip local binary cache and re-download everything (overrides spec default)"),
 		option.DefaultStatusCode(http.StatusAccepted),
 		option.AddResponse(http.StatusUnauthorized, "Invalid or missing secret", fuego.Response{Type: fuego.HTTPError{}}),
 		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
@@ -71,7 +85,12 @@ func (rs WebhookResource) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !rs.PM.TriggerDeploy(name) {
+	opts := project.UpOptions{
+		Force:   parseBoolQuery(r, "force", s.GitOps.Webhook.Force),
+		NoCache: parseBoolQuery(r, "no_cache", s.GitOps.Webhook.NoCache),
+	}
+
+	if !rs.PM.TriggerDeploy(name, opts) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
 		_ = json.NewEncoder(w).Encode(dto.WebhookResponse{

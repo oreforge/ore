@@ -17,6 +17,8 @@ type WebhookInfoResponse struct {
 	Enabled bool   `json:"enabled"`
 	URL     string `json:"url,omitempty" example:"/webhook/mynetwork?secret=abc123"`
 	Secret  string `json:"secret,omitempty"`
+	Force   bool   `json:"force,omitempty"`
+	NoCache bool   `json:"no_cache,omitempty"`
 }
 
 type WebhookResponse struct {

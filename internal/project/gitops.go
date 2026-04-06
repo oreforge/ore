@@ -118,13 +118,13 @@ func (m *Manager) poll(ctx context.Context, name string, interval time.Duration,
 	}
 }
 
-func (m *Manager) TriggerDeploy(name string) bool {
+func (m *Manager) TriggerDeploy(name string, opts UpOptions) bool {
 	if !m.acquireDeploy(name) {
 		return false
 	}
 	go func() {
 		defer m.releaseDeploy(name)
-		if err := m.Deploy(context.Background(), name); err != nil {
+		if err := m.Deploy(context.Background(), name, opts); err != nil {
 			m.logger.Error("triggered deploy failed", "project", name, "error", err)
 		}
 	}()
@@ -137,7 +137,7 @@ func (m *Manager) syncDeploy(ctx context.Context, name string) {
 	}
 	defer m.releaseDeploy(name)
 
-	if err := m.Deploy(ctx, name); err != nil {
+	if err := m.Deploy(ctx, name, UpOptions{}); err != nil {
 		if ctx.Err() != nil {
 			return
 		}

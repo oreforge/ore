@@ -269,14 +269,14 @@ func (m *Manager) Clean(_ context.Context, name string, target CleanTarget, logg
 	}
 }
 
-func (m *Manager) Deploy(ctx context.Context, name string) error {
+func (m *Manager) Deploy(ctx context.Context, name string, opts UpOptions) error {
 	m.logger.Info("deploying project", "project", name)
 
 	if err := m.Pull(ctx, name); err != nil {
 		return fmt.Errorf("pulling %s: %w", name, err)
 	}
 
-	if err := m.Up(ctx, name, UpOptions{}, m.logger); err != nil {
+	if err := m.Up(ctx, name, opts, m.logger); err != nil {
 		return fmt.Errorf("deploying %s: %w", name, err)
 	}
 

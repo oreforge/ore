@@ -151,7 +151,7 @@ func newProjectsUseCmd() *cobra.Command {
 }
 
 func newProjectsWebhookCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "webhook <name>",
 		Short: "Show webhook URL for a project",
 		Args:  cobra.ExactArgs(1),
@@ -170,11 +170,28 @@ func newProjectsWebhookCmd() *cobra.Command {
 				return fmt.Errorf("webhook is not enabled for project %q", args[0])
 			}
 
+			webhookURL := info.URL
+
+			force, _ := cmd.Flags().GetBool("force")
+			noCache, _ := cmd.Flags().GetBool("no-cache")
+
+			if force {
+				webhookURL += "&force=true"
+			}
+			if noCache {
+				webhookURL += "&no_cache=true"
+			}
+
 			addr, _, _, _ := config.ResolveRemote(cfg)
-			fmt.Printf("http://%s%s\n", addr, info.URL)
+			fmt.Printf("http://%s%s\n", addr, webhookURL)
 			return nil
 		},
 	}
+
+	cmd.Flags().Bool("no-cache", false, "skip local binary cache and re-download everything")
+	cmd.Flags().Bool("force", false, "force restart all servers even if unchanged")
+
+	return cmd
 }
 
 func newProjectsActiveCmd() *cobra.Command {

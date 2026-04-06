@@ -21,6 +21,8 @@ type GitOpsPoll struct {
 
 type GitOpsWebhook struct {
 	Enabled bool `yaml:"enabled,omitempty"`
+	Force   bool `yaml:"force,omitempty"`
+	NoCache bool `yaml:"noCache,omitempty"`
 }
 
 type Server struct {
