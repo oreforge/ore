@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/oreforge/ore/internal/spec"
@@ -89,7 +90,11 @@ func (m *Manager) StopProjectPoll(name string) {
 
 	if ok {
 		entry.cancel()
-		<-entry.done
+		select {
+		case <-entry.done:
+		case <-time.After(5 * time.Second):
+			m.logger.Warn("poll goroutine did not exit in time", "project", name)
+		}
 	}
 }
 
@@ -124,10 +129,17 @@ func (m *Manager) Shutdown(ctx context.Context) {
 		m.logger.Error("failed to list projects for shutdown", "error", err)
 		return
 	}
+
+	var wg sync.WaitGroup
 	for _, name := range names {
-		m.logger.Info("stopping project", "project", name)
-		if err := m.Down(ctx, name, m.logger); err != nil {
-			m.logger.Error("failed to stop project", "project", name, "error", err)
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			m.logger.Info("stopping project", "project", name)
+			if err := m.Down(ctx, name, m.logger); err != nil {
+				m.logger.Error("failed to stop project", "project", name, "error", err)
+			}
+		}()
 	}
+	wg.Wait()
 }

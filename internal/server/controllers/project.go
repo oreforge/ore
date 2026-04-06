@@ -383,6 +383,11 @@ func (rs ProjectResource) console(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
+	go func() {
+		<-ctx.Done()
+		_ = hijacked.Conn.Close()
+	}()
+
 	var wg sync.WaitGroup
 
 	wg.Add(1)
