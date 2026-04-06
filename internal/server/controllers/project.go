@@ -369,16 +369,15 @@ func (rs ProjectResource) console(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cols, rows := 80, 24
-	if v := r.URL.Query().Get("cols"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			cols = n
-		}
+	cols, err := parseTermDim(r, "cols", 80, 500)
+	if err != nil {
+		errs.Write(w, http.StatusBadRequest, err.Error())
+		return
 	}
-	if v := r.URL.Query().Get("rows"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			rows = n
-		}
+	rows, err := parseTermDim(r, "rows", 24, 200)
+	if err != nil {
+		errs.Write(w, http.StatusBadRequest, err.Error())
+		return
 	}
 
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
@@ -456,8 +455,8 @@ func (rs ProjectResource) console(w http.ResponseWriter, r *http.Request) {
 				}
 				if json.Unmarshal(data, &resize) == nil && resize.Width > 0 && resize.Height > 0 {
 					_ = rs.DockerClient.ContainerResize(ctx, serverName, container.ResizeOptions{
-						Width:  uint(resize.Width),
-						Height: uint(resize.Height),
+						Width:  uint(min(resize.Width, 500)),
+						Height: uint(min(resize.Height, 200)),
 					})
 				}
 				continue
@@ -469,6 +468,24 @@ func (rs ProjectResource) console(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	wg.Wait()
+}
+
+func parseTermDim(r *http.Request, param string, defaultVal, max int) (int, error) {
+	v := r.URL.Query().Get(param)
+	if v == "" {
+		return defaultVal, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s: must be a positive integer", param)
+	}
+	if n < 1 {
+		return 1, nil
+	}
+	if n > max {
+		return max, nil
+	}
+	return n, nil
 }
 
 func nameFromURL(rawURL string) (string, error) {
