@@ -66,6 +66,59 @@ archives:
     files:
       - none*
 
+dockers:
+  - id: ored-amd64
+    ids:
+      - ored
+    goos: linux
+    goarch: amd64
+    dockerfile: Dockerfile.ored
+    image_templates:
+      - "ghcr.io/oreforge/ore/ored:{{ .Version }}-amd64"
+    build_flag_templates:
+      - "--pull"
+      - "--label=org.opencontainers.image.title=ored"
+      - "--label=org.opencontainers.image.description=OreForge daemon for managing game server networks"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.source=https://github.com/oreforge/ore"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+      - "--platform=linux/amd64"
+
+  - id: ored-arm64
+    ids:
+      - ored
+    goos: linux
+    goarch: arm64
+    dockerfile: Dockerfile.ored
+    image_templates:
+      - "ghcr.io/oreforge/ore/ored:{{ .Version }}-arm64"
+    build_flag_templates:
+      - "--pull"
+      - "--label=org.opencontainers.image.title=ored"
+      - "--label=org.opencontainers.image.description=OreForge daemon for managing game server networks"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.source=https://github.com/oreforge/ore"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+      - "--platform=linux/arm64"
+
+docker_manifests:
+  - name_template: "ghcr.io/oreforge/ore/ored:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/oreforge/ore/ored:{{ .Version }}-amd64"
+      - "ghcr.io/oreforge/ore/ored:{{ .Version }}-arm64"
+
+  - name_template: "ghcr.io/oreforge/ore/ored:{{ .Major }}.{{ .Minor }}"
+    image_templates:
+      - "ghcr.io/oreforge/ore/ored:{{ .Version }}-amd64"
+      - "ghcr.io/oreforge/ore/ored:{{ .Version }}-arm64"
+
+  - name_template: "ghcr.io/oreforge/ore/ored:latest"
+    image_templates:
+      - "ghcr.io/oreforge/ore/ored:{{ .Version }}-amd64"
+      - "ghcr.io/oreforge/ore/ored:{{ .Version }}-arm64"
+
 checksum:
   name_template: "checksums.txt"
   algorithm: sha256
