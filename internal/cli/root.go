@@ -97,7 +97,7 @@ func Run(args []string, info BuildInfo) int {
 		_ = remoteClient.Close()
 	}
 	if err != nil {
-		slog.Error("command failed", "error", err)
+		fmt.Fprintln(os.Stderr, "Error:", err)
 		return 1
 	}
 	return 0
