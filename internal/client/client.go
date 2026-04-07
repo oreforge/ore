@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/coder/websocket"
 	"golang.org/x/term"
@@ -20,22 +21,51 @@ import (
 )
 
 type Client struct {
-	addr    string
-	token   string
-	project string
-	client  *http.Client
+	addr       string
+	token      string
+	project    string
+	httpScheme string
+	wsScheme   string
+	client     *http.Client
 }
 
 func New(addr, token, project string) (*Client, error) {
 	if project == "" {
 		return nil, fmt.Errorf("no active project set (use 'ore projects use <name>' to select one)")
 	}
+	host, httpScheme, wsScheme := parseAddr(addr)
 	return &Client{
-		addr:    addr,
-		token:   token,
-		project: project,
-		client:  &http.Client{},
+		addr:       host,
+		token:      token,
+		project:    project,
+		httpScheme: httpScheme,
+		wsScheme:   wsScheme,
+		client: &http.Client{
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if len(via) > 0 {
+					req.Method = via[0].Method
+					req.Body = via[0].Body
+					req.GetBody = via[0].GetBody
+					req.ContentLength = via[0].ContentLength
+					for k, v := range via[0].Header {
+						req.Header[k] = v
+					}
+				}
+				return nil
+			},
+		},
 	}, nil
+}
+
+func parseAddr(addr string) (host, httpScheme, wsScheme string) {
+	switch {
+	case strings.HasPrefix(addr, "https://"):
+		return strings.TrimPrefix(addr, "https://"), "https", "wss"
+	case strings.HasPrefix(addr, "http://"):
+		return strings.TrimPrefix(addr, "http://"), "http", "ws"
+	default:
+		return addr, "http", "ws"
+	}
 }
 
 func (c *Client) projectPath() string {
@@ -104,7 +134,7 @@ func (c *Client) Console(ctx context.Context, serverName string) error {
 	q.Set("rows", strconv.Itoa(rows))
 
 	u := url.URL{
-		Scheme:   "ws",
+		Scheme:   c.wsScheme,
 		Host:     c.addr,
 		Path:     c.projectPath() + "/console",
 		RawQuery: q.Encode(),
@@ -134,7 +164,7 @@ func (c *Client) newRequest(ctx context.Context, method, path string, body []byt
 		bodyReader = bytes.NewReader(body)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, "http://"+c.addr+path, bodyReader)
+	req, err := http.NewRequestWithContext(ctx, method, c.httpScheme+"://"+c.addr+path, bodyReader)
 	if err != nil {
 		return nil, err
 	}

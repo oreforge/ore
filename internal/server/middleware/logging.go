@@ -3,6 +3,7 @@ package middleware
 import (
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -14,7 +15,7 @@ func RequestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 			logger.Info("request started",
 				"method", r.Method,
 				"path", r.URL.Path,
-				"remote_addr", r.RemoteAddr,
+				"remote_addr", realIP(r),
 			)
 
 			ww := &responseWriter{ResponseWriter: w}
@@ -59,4 +60,17 @@ func (rw *responseWriter) Flush() {
 
 func (rw *responseWriter) Unwrap() http.ResponseWriter {
 	return rw.ResponseWriter
+}
+
+func realIP(r *http.Request) string {
+	if ip := r.Header.Get("X-Real-IP"); ip != "" {
+		return ip
+	}
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		if i := strings.Index(xff, ","); i > 0 {
+			return strings.TrimSpace(xff[:i])
+		}
+		return xff
+	}
+	return r.RemoteAddr
 }
