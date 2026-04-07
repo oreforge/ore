@@ -92,8 +92,6 @@ services:
     image: ghcr.io/oreforge/ore/ored:latest
     pull_policy: always
     restart: unless-stopped
-    ports:
-      - "9090:9090"
     volumes:
       - ored-data:/var/lib/ored
       - /var/run/docker.sock:/var/run/docker.sock
