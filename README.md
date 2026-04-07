@@ -82,6 +82,47 @@ Retrieve the auto-generated auth token:
 docker exec ored grep token /var/lib/ored/config/ored/config.yaml | awk '{print $2}'
 ```
 
+## Production Deploy with Docker Compose
+
+Deploy ored and the dashboard together using Docker Compose. Create a `docker-compose.yml`:
+
+```yaml
+services:
+  ored:
+    image: ghcr.io/oreforge/ore/ored:latest
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ored-data:/var/lib/ored
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - ORED_ADDR=:9090
+      - ORED_TOKEN=your-secret-token
+
+  dashboard:
+    image: ghcr.io/oreforge/ore-dashboard:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - ORE_API_URL=http://ored:9090
+      - ORE_TOKEN=your-secret-token
+    depends_on:
+      - ored
+
+volumes:
+  ored-data:
+```
+
+Set the same token for both `ORED_TOKEN` and `ORE_TOKEN`, then start the stack:
+
+```sh
+docker compose up -d
+```
+
+The dashboard is available at `http://localhost:3000`.
+
 ## Quick Start
 
 Create an `ore.yaml`:
@@ -189,6 +230,12 @@ servers:
     volumes:                # named volumes (optional)
       - name: string
         target: string      # mount path inside the server
+    healthcheck:            # Docker HEALTHCHECK (optional, defaults from software provider)
+      cmd: string           # check command (e.g. "nc -z localhost 25565")
+      interval: duration    # time between checks (default: 2s)
+      timeout: duration     # check timeout (default: 2s)
+      startPeriod: duration # grace period on startup (default: 5s)
+      retries: int          # consecutive failures before unhealthy (default from provider)
 
 services:
   - name: string            # service name
@@ -200,6 +247,12 @@ services:
     volumes:                # named volumes (optional)
       - name: string
         target: string      # mount path inside the service
+    healthcheck:            # Docker HEALTHCHECK (optional, no default for services)
+      cmd: string           # check command (e.g. "pg_isready -U postgres")
+      interval: duration    # time between checks (default: 10s)
+      timeout: duration     # check timeout (default: 5s)
+      startPeriod: duration # grace period on startup (default: 30s)
+      retries: int          # consecutive failures before unhealthy (default: 3)
 ```
 
 All servers and services join the same network and can reach each other by name. Services start before servers and stop after them.
