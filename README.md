@@ -2,16 +2,75 @@
 
 Infrastructure-as-code for game server networks. Define servers in YAML, and ore builds, deploys, and manages them.
 
-## Install
+## Install ore
+
+### Homebrew (macOS / Linux)
 
 ```sh
-# ore cli for local desktop (enough to get started and try ore)
-GONOSUMCHECK=github.com/oreforge/ore GOFLAGS=-mod=mod GONOSUMDB=github.com/oreforge/ore GOPROXY=direct go install github.com/oreforge/ore/cmd/ore@latest
-# ored for the server (optional, only needed for real production use)
-GONOSUMCHECK=github.com/oreforge/ore GOFLAGS=-mod=mod GONOSUMDB=github.com/oreforge/ore GOPROXY=direct go install github.com/oreforge/ore/cmd/ored@latest
+brew install --cask oreforge/tap/ore
 ```
 
-Or download binaries from [Releases](https://github.com/oreforge/ore/releases).
+### Scoop (Windows)
+
+```sh
+scoop bucket add oreforge https://github.com/oreforge/scoop-bucket
+scoop install ore
+```
+
+### Debian / Ubuntu
+
+```sh
+curl -LO "https://github.com/oreforge/ore/releases/latest/download/ore_$(curl -s https://api.github.com/repos/oreforge/ore/releases/latest | grep tag_name | cut -d '"' -f4 | sed 's/^v//')_linux_amd64.deb"
+sudo dpkg -i ore_*.deb
+```
+
+### RHEL / Fedora
+
+```sh
+curl -LO "https://github.com/oreforge/ore/releases/latest/download/ore_$(curl -s https://api.github.com/repos/oreforge/ore/releases/latest | grep tag_name | cut -d '"' -f4 | sed 's/^v//')_linux_amd64.rpm"
+sudo rpm -i ore_*.rpm
+```
+
+### Alpine
+
+```sh
+curl -LO "https://github.com/oreforge/ore/releases/latest/download/ore_$(curl -s https://api.github.com/repos/oreforge/ore/releases/latest | grep tag_name | cut -d '"' -f4 | sed 's/^v//')_linux_amd64.apk"
+sudo apk add --allow-untrusted ore_*.apk
+```
+
+### Arch Linux
+
+```sh
+curl -LO "https://github.com/oreforge/ore/releases/latest/download/ore_$(curl -s https://api.github.com/repos/oreforge/ore/releases/latest | grep tag_name | cut -d '"' -f4 | sed 's/^v//')_linux_amd64.pkg.tar.zst"
+sudo pacman -U ore_*.pkg.tar.zst
+```
+
+### Go
+
+```sh
+go install github.com/oreforge/ore/cmd/ore@latest
+```
+
+### Binary
+
+Download pre-built binaries from [Releases](https://github.com/oreforge/ore/releases).
+
+## Install ored
+
+ored is the server daemon for production deployments. It is available as a binary or Docker image.
+
+### Binary
+
+Download from [Releases](https://github.com/oreforge/ore/releases).
+
+### Docker
+
+```sh
+docker run -d \
+  -p 9090:9090 \
+  -v ored-data:/var/lib/ored \
+  ghcr.io/oreforge/ore/ored:latest
+```
 
 ## Quick Start
 
