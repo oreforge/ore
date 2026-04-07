@@ -8,9 +8,6 @@ project_name: ore
 env:
   - CGO_ENABLED=0
 
-gomod:
-  proxy: true
-
 builds:
   - id: ore
     main: ./cmd/ore
