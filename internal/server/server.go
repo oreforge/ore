@@ -64,23 +64,17 @@ func New(pm *project.Manager, token string, logger *slog.Logger, logLevel slog.L
 	s := fuego.NewServer(serverOpts...)
 	s.WriteTimeout = 0
 
-	if token != "" {
-		s.OpenAPI.Description().Security = openapi3.SecurityRequirements{
-			{"bearerAuth": {}},
-		}
-	}
-
 	api := fuego.Group(s, "/api")
 	fuego.Use(api, mw.RequestLogger(logger))
+
+	authed := fuego.Group(api, "")
 	if token != "" {
-		fuego.Use(api, mw.BearerAuth(token))
+		fuego.Use(authed, mw.BearerAuth(token))
 	}
+	controllers.ProjectResource{PM: pm, DockerClient: dockerClient, LogLevel: logLevel, Logger: logger, Token: token}.MountRoutes(authed)
 
-	controllers.ProjectResource{PM: pm, DockerClient: dockerClient, LogLevel: logLevel, Logger: logger, Token: token}.MountRoutes(api)
-
-	webhookGroup := fuego.Group(s, "/api/webhook")
+	webhookGroup := fuego.Group(api, "/webhook")
 	fuego.Use(webhookGroup, mw.CORS())
-	fuego.Use(webhookGroup, mw.RequestLogger(logger))
 	controllers.WebhookResource{PM: pm, Token: token, Logger: logger}.MountRoutes(webhookGroup)
 
 	for _, pathItem := range s.OpenAPI.Description().Paths.Map() {

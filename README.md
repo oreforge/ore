@@ -67,10 +67,19 @@ Download from [Releases](https://github.com/oreforge/ore/releases).
 
 ```sh
 docker run -d \
+  --name ored \
   -p 9090:9090 \
   -v ored-data:/var/lib/ored \
   -v /var/run/docker.sock:/var/run/docker.sock \
   ghcr.io/oreforge/ore/ored:latest
+```
+
+The volume persists config (including the auth token), projects, and build artifacts across restarts.
+
+Retrieve the auto-generated auth token:
+
+```sh
+docker exec ored grep token /var/lib/ored/config/ored/config.yaml | awk '{print $2}'
 ```
 
 ## Quick Start

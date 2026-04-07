@@ -18,6 +18,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/docker/docker/api/types/container"
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/go-fuego/fuego"
 	"github.com/go-fuego/fuego/option"
 
@@ -38,6 +39,8 @@ type ProjectResource struct {
 }
 
 func (rs ProjectResource) MountRoutes(s *fuego.Server) {
+	bearer := option.Security(openapi3.SecurityRequirement{"bearerAuth": {}})
+
 	projects := fuego.Group(s, "/projects")
 
 	fuego.Get(projects, "", rs.list,
@@ -45,6 +48,7 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 		option.Description("Returns names of all projects that contain an ore.yaml."),
 		option.Tags("Projects"),
 		option.OperationID("listProjects"),
+		bearer,
 	)
 	fuego.Post(projects, "", rs.add,
 		option.Summary("Clone a project"),
@@ -54,6 +58,7 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 		option.DefaultStatusCode(http.StatusCreated),
 		option.AddResponse(http.StatusConflict, "Project already exists", fuego.Response{Type: fuego.HTTPError{}}),
 		option.AddResponse(http.StatusUnprocessableEntity, "Clone failed or missing ore.yaml", fuego.Response{Type: fuego.HTTPError{}}),
+		bearer,
 	)
 	fuego.DeleteStd(projects, "/{name}", rs.remove,
 		option.Summary("Remove a project"),
@@ -64,6 +69,7 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 		option.DefaultStatusCode(http.StatusNoContent),
 		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
 		option.AddResponse(http.StatusInternalServerError, "Removal failed", fuego.Response{Type: fuego.HTTPError{}}),
+		bearer,
 	)
 
 	ops := fuego.Group(projects, "/{name}",
@@ -77,6 +83,7 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 		option.OperationID("updateProject"),
 		option.AddResponse(http.StatusOK, "NDJSON progress stream", fuego.Response{Type: dto.StreamLine{}}),
 		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
+		bearer,
 	)
 	fuego.Get(ops, "/status", rs.status,
 		option.Summary("Get network status"),
@@ -84,6 +91,7 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 		option.Tags("Projects"),
 		option.OperationID("getStatus"),
 		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
+		bearer,
 	)
 	fuego.PostStd(ops, "/up", rs.up,
 		option.Summary("Start all servers"),
@@ -94,6 +102,7 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 		option.AddResponse(http.StatusOK, "NDJSON progress stream", fuego.Response{Type: dto.StreamLine{}}),
 		option.AddResponse(http.StatusBadRequest, "Invalid request body", fuego.Response{Type: fuego.HTTPError{}}),
 		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
+		bearer,
 	)
 	fuego.PostStd(ops, "/down", rs.down,
 		option.Summary("Stop all servers"),
@@ -102,6 +111,7 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 		option.OperationID("down"),
 		option.AddResponse(http.StatusOK, "NDJSON progress stream", fuego.Response{Type: dto.StreamLine{}}),
 		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
+		bearer,
 	)
 	fuego.PostStd(ops, "/build", rs.build,
 		option.Summary("Build images"),
@@ -112,6 +122,7 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 		option.AddResponse(http.StatusOK, "NDJSON progress stream", fuego.Response{Type: dto.StreamLine{}}),
 		option.AddResponse(http.StatusBadRequest, "Invalid request body", fuego.Response{Type: fuego.HTTPError{}}),
 		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
+		bearer,
 	)
 	fuego.PostStd(ops, "/prune", rs.prune,
 		option.Summary("Clean resources"),
@@ -122,6 +133,7 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 		option.AddResponse(http.StatusOK, "NDJSON progress stream", fuego.Response{Type: dto.StreamLine{}}),
 		option.AddResponse(http.StatusBadRequest, "Invalid request body", fuego.Response{Type: fuego.HTTPError{}}),
 		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
+		bearer,
 	)
 	fuego.PostStd(ops, "/clean", rs.clean,
 		option.Summary("Clean artifacts"),
@@ -132,6 +144,7 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 		option.AddResponse(http.StatusOK, "NDJSON progress stream", fuego.Response{Type: dto.StreamLine{}}),
 		option.AddResponse(http.StatusBadRequest, "Invalid request body", fuego.Response{Type: fuego.HTTPError{}}),
 		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
+		bearer,
 	)
 	fuego.GetStd(ops, "/console", rs.console,
 		option.Summary("Server console"),
@@ -142,6 +155,7 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 		option.Query("cols", "Initial terminal width (default 80)"),
 		option.Query("rows", "Initial terminal height (default 24)"),
 		option.AddResponse(http.StatusBadRequest, "Missing server parameter", fuego.Response{Type: fuego.HTTPError{}}),
+		bearer,
 	)
 	fuego.Get(ops, "/webhook", rs.webhookInfo,
 		option.Summary("Get webhook info"),
@@ -149,6 +163,7 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 		option.Tags("Projects"),
 		option.OperationID("getWebhookInfo"),
 		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
+		bearer,
 	)
 }
 

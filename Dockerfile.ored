@@ -8,6 +8,7 @@ COPY ${TARGETPLATFORM}/ored /usr/local/bin/ored
 
 ENV ORED_ADDR=":9090"
 ENV ORED_PROJECTS="/var/lib/ored/projects"
+ENV XDG_CONFIG_HOME="/var/lib/ored/config"
 
 EXPOSE 9090
 
