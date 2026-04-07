@@ -200,8 +200,8 @@ func sortedEnv(m map[string]string) []string {
 
 func buildEnvList(srv *spec.Server) []string {
 	var env []string
-	if len(srv.JVMFlags) > 0 {
-		env = append(env, "ORE_JVM_FLAGS="+strings.Join(srv.JVMFlags, " "))
+	if srv.Memory != "" {
+		env = append(env, "ORE_MEMORY="+srv.Memory)
 	}
 	env = append(env, sortedEnv(srv.Env)...)
 	return env

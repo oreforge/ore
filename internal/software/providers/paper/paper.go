@@ -110,7 +110,7 @@ func (p *Provider) Resolve(ctx context.Context, version string) (*software.Artif
 			BaseImage:  fmt.Sprintf("eclipse-temurin:%d-jre-alpine", major),
 			BinaryName: "server.jar",
 			BinaryMode: 0o644,
-			Entrypoint: "#!/bin/sh\necho \"eula=true\" > /data/eula.txt 2>/dev/null || true\nexec java $ORE_JVM_FLAGS -jar /opt/ore/server.jar \"$@\"\n",
+			Entrypoint: "#!/bin/sh\necho \"eula=true\" > /data/eula.txt 2>/dev/null || true\nJAVA_OPTS=\"\"\n[ -n \"$ORE_MEMORY\" ] && JAVA_OPTS=\"-Xmx${ORE_MEMORY}\"\nexec java $JAVA_OPTS -jar /opt/ore/server.jar \"$@\"\n",
 			ExtraArgs:  "--nogui",
 		},
 		Health: software.HealthCheck{

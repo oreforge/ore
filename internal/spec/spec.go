@@ -32,7 +32,6 @@ type Server struct {
 	Ports    []string          `yaml:"ports,omitempty"`
 	Memory   string            `yaml:"memory,omitempty"`
 	CPU      string            `yaml:"cpu,omitempty"`
-	JVMFlags []string          `yaml:"jvmFlags,omitempty"`
 	Env      map[string]string `yaml:"env,omitempty"`
 	Volumes  []Volume          `yaml:"volumes,omitempty"`
 }

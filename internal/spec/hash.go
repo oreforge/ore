@@ -13,7 +13,6 @@ func ServerHash(srv *Server, imageTag string) string {
 	hashField(h, srv.Memory)
 	hashField(h, srv.CPU)
 	hashList(h, srv.Ports)
-	hashList(h, srv.JVMFlags)
 	hashEnv(h, srv.Env)
 	hashVolumes(h, srv.Volumes)
 	return fmt.Sprintf("%x", h.Sum(nil))[:12]

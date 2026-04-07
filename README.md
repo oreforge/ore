@@ -101,13 +101,11 @@ servers:
     dir: ./servers/lobby
     software: paper:1.21.11
     memory: 1G
-    jvmFlags: [ -Xms512M, -Xmx1G ]
 
   - name: survival
     dir: ./servers/survival
     software: paper:1.21.11
     memory: 2G
-    jvmFlags: [ -Xms1G, -Xmx2G ]
     volumes:
       - name: world
         target: /data/world
@@ -186,7 +184,6 @@ servers:
       - "host:server"
     memory: string          # memory limit, e.g. 512M, 2G (optional)
     cpu: string             # CPU limit, e.g. 1.5 (optional)
-    jvmFlags: [ string ]    # JVM flags for Java servers (optional)
     env:                    # environment variables (optional)
       KEY: value
     volumes:                # named volumes (optional)
