@@ -266,6 +266,7 @@ dockers_v2:
     platforms:
       - linux/amd64
       - linux/arm64
+    sbom: false
     labels:
       "org.opencontainers.image.title": "ored"
       "org.opencontainers.image.description": "OreForge daemon for managing game server networks"
