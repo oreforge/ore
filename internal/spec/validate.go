@@ -51,6 +51,10 @@ func Validate(s *Network) error {
 				return fmt.Errorf("validation: servers[%d] (%s): volumes[%d].target is required", i, srv.Name, j)
 			}
 		}
+
+		if err := validateHealthCheck(srv.HealthCheck, fmt.Sprintf("servers[%d] (%s)", i, srv.Name)); err != nil {
+			return err
+		}
 	}
 
 	for i, svc := range s.Services {
@@ -84,8 +88,31 @@ func Validate(s *Network) error {
 				return fmt.Errorf("validation: services[%d] (%s): volumes[%d].target is required", i, svc.Name, j)
 			}
 		}
+
+		if err := validateHealthCheck(svc.HealthCheck, fmt.Sprintf("services[%d] (%s)", i, svc.Name)); err != nil {
+			return err
+		}
 	}
 
+	return nil
+}
+
+func validateHealthCheck(hc *HealthCheck, context string) error {
+	if hc == nil || hc.Disabled {
+		return nil
+	}
+	if hc.Interval < 0 {
+		return fmt.Errorf("validation: %s: healthcheck.interval must be positive", context)
+	}
+	if hc.Timeout < 0 {
+		return fmt.Errorf("validation: %s: healthcheck.timeout must be positive", context)
+	}
+	if hc.StartPeriod < 0 {
+		return fmt.Errorf("validation: %s: healthcheck.startPeriod must be positive", context)
+	}
+	if hc.Retries < 0 {
+		return fmt.Errorf("validation: %s: healthcheck.retries must be positive", context)
+	}
 	return nil
 }
 

@@ -88,8 +88,11 @@ func (p *Provider) Resolve(ctx context.Context, version string) (*software.Artif
 			BinaryMode: 0o755,
 		},
 		Health: software.HealthCheck{
-			Timeout: 30 * time.Second,
-			Retries: 15,
+			Cmd:         "nc -z localhost 25565",
+			Interval:    2 * time.Second,
+			Timeout:     2 * time.Second,
+			StartPeriod: 5 * time.Second,
+			Retries:     15,
 		},
 	}, nil
 }

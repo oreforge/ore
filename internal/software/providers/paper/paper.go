@@ -114,8 +114,11 @@ func (p *Provider) Resolve(ctx context.Context, version string) (*software.Artif
 			ExtraArgs:  "--nogui",
 		},
 		Health: software.HealthCheck{
-			Timeout: 90 * time.Second,
-			Retries: 30,
+			Cmd:         "nc -z localhost 25565",
+			Interval:    2 * time.Second,
+			Timeout:     2 * time.Second,
+			StartPeriod: 5 * time.Second,
+			Retries:     30,
 		},
 	}, nil
 }

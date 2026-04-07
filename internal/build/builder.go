@@ -112,7 +112,8 @@ func (b *Builder) Build(ctx context.Context, srv *spec.Server, repoRoot string) 
 	}
 
 	imageTag := fmt.Sprintf("ore/%s:%s", srv.Name, cacheKey)
-	result := Result{ImageTag: imageTag, HealthTimeout: artifact.Health.Timeout}
+	resolvedHC := resolveServerHealthCheck(srv.HealthCheck, artifact.Health)
+	result := Result{ImageTag: imageTag, HealthTimeout: resolvedHC.WaitTimeout()}
 
 	if !b.opts.ForceBuild && b.imageExists(ctx, imageTag) {
 		b.logger.Info("image cached, skipping build", "server", srv.Name, "tag", imageTag)
@@ -127,11 +128,10 @@ func (b *Builder) Build(ctx context.Context, srv *spec.Server, repoRoot string) 
 	if err != nil {
 		return Result{}, err
 	}
-
 	dfOpts := DockerfileOptions{
-		Runtime:       artifact.Runtime,
-		ExtraArgs:     artifact.Runtime.ExtraArgs,
-		HealthRetries: artifact.Health.Retries,
+		Runtime:     artifact.Runtime,
+		ExtraArgs:   artifact.Runtime.ExtraArgs,
+		HealthCheck: resolvedHC,
 	}
 	dockerfile := GenerateDockerfile(dfOpts)
 	entrypoint := artifact.Runtime.Entrypoint
@@ -384,4 +384,40 @@ func (b *Builder) imageExists(ctx context.Context, tag string) bool {
 		return false
 	}
 	return len(images) > 0
+}
+
+func resolveServerHealthCheck(user *spec.HealthCheck, provider software.HealthCheck) *spec.HealthCheck {
+	if user != nil && user.Disabled {
+		return &spec.HealthCheck{Disabled: true}
+	}
+
+	resolved := &spec.HealthCheck{
+		Cmd:         provider.Cmd,
+		Interval:    provider.Interval,
+		Timeout:     provider.Timeout,
+		StartPeriod: provider.StartPeriod,
+		Retries:     provider.Retries,
+	}
+
+	if user == nil {
+		return resolved
+	}
+
+	if user.Cmd != "" {
+		resolved.Cmd = user.Cmd
+	}
+	if user.Interval != 0 {
+		resolved.Interval = user.Interval
+	}
+	if user.Timeout != 0 {
+		resolved.Timeout = user.Timeout
+	}
+	if user.StartPeriod != 0 {
+		resolved.StartPeriod = user.StartPeriod
+	}
+	if user.Retries != 0 {
+		resolved.Retries = user.Retries
+	}
+
+	return resolved
 }

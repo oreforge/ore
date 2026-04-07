@@ -101,7 +101,9 @@ func (d *Deployer) Up(ctx context.Context, cfg *spec.Network, images map[string]
 				return fmt.Errorf("ensuring volumes for %s: %w", svc.Name, err)
 			}
 
-			if err := StartServiceContainer(svcCtx, d.docker, &svc, name, cfg.Network, d.logger); err != nil {
+			svcHC := resolveServiceHealthCheck(svc.HealthCheck)
+
+			if err := StartServiceContainer(svcCtx, d.docker, &svc, name, cfg.Network, svcHC, d.logger); err != nil {
 				return fmt.Errorf("starting %s: %w", name, err)
 			}
 
@@ -109,8 +111,10 @@ func (d *Deployer) Up(ctx context.Context, cfg *spec.Network, images map[string]
 				return fmt.Errorf("service %s failed to start: %w", name, err)
 			}
 
-			if err := WaitForHealthy(svcCtx, d.docker, name, 60*time.Second, d.logger); err != nil {
-				d.logger.Warn("service health check failed", "service", name, "error", err)
+			if hcTimeout := svcHC.WaitTimeout(); hcTimeout > 0 {
+				if err := WaitForHealthy(svcCtx, d.docker, name, hcTimeout, d.logger); err != nil {
+					d.logger.Warn("service health check failed", "service", name, "error", err)
+				}
 			}
 
 			svcMu.Lock()

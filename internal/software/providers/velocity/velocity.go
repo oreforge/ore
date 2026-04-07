@@ -87,8 +87,11 @@ func (p *Provider) Resolve(ctx context.Context, version string) (*software.Artif
 			Entrypoint: "#!/bin/sh\necho \"eula=true\" > /data/eula.txt 2>/dev/null || true\nJAVA_OPTS=\"\"\n[ -n \"$ORE_MEMORY\" ] && JAVA_OPTS=\"-Xmx${ORE_MEMORY}\"\nexec java $JAVA_OPTS -jar /opt/ore/server.jar \"$@\"\n",
 		},
 		Health: software.HealthCheck{
-			Timeout: 30 * time.Second,
-			Retries: 15,
+			Cmd:         "nc -z localhost 25577",
+			Interval:    2 * time.Second,
+			Timeout:     2 * time.Second,
+			StartPeriod: 5 * time.Second,
+			Retries:     15,
 		},
 	}, nil
 }

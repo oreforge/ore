@@ -15,6 +15,7 @@ func ServerHash(srv *Server, imageTag string) string {
 	hashList(h, srv.Ports)
 	hashEnv(h, srv.Env)
 	hashVolumes(h, srv.Volumes)
+	hashHealthCheck(h, srv.HealthCheck)
 	return fmt.Sprintf("%x", h.Sum(nil))[:12]
 }
 
@@ -24,6 +25,7 @@ func ServiceHash(svc *Service) string {
 	hashList(h, svc.Ports)
 	hashEnv(h, svc.Env)
 	hashVolumes(h, svc.Volumes)
+	hashHealthCheck(h, svc.HealthCheck)
 	return fmt.Sprintf("%x", h.Sum(nil))[:12]
 }
 
@@ -58,4 +60,21 @@ func hashVolumes(h hash.Hash, volumes []Volume) {
 		h.Write([]byte(v.Name + ":" + v.Target))
 		h.Write([]byte{0})
 	}
+}
+
+func hashHealthCheck(h hash.Hash, hc *HealthCheck) {
+	if hc == nil {
+		h.Write([]byte{0})
+		return
+	}
+	if hc.Disabled {
+		h.Write([]byte("disabled"))
+		h.Write([]byte{0})
+		return
+	}
+	hashField(h, hc.Cmd)
+	hashField(h, hc.Interval.String())
+	hashField(h, hc.Timeout.String())
+	hashField(h, hc.StartPeriod.String())
+	hashField(h, fmt.Sprintf("%d", hc.Retries))
 }

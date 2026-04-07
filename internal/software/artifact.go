@@ -19,6 +19,9 @@ type Runtime struct {
 }
 
 type HealthCheck struct {
-	Timeout time.Duration
-	Retries int
+	Cmd         string
+	Interval    time.Duration
+	Timeout     time.Duration
+	StartPeriod time.Duration
+	Retries     int
 }

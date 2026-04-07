@@ -2,14 +2,16 @@ package build
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/oreforge/ore/internal/software"
+	"github.com/oreforge/ore/internal/spec"
 )
 
 type DockerfileOptions struct {
-	Runtime       software.Runtime
-	ExtraArgs     string
-	HealthRetries int
+	Runtime     software.Runtime
+	ExtraArgs   string
+	HealthCheck *spec.HealthCheck
 }
 
 func GenerateDockerfile(opts DockerfileOptions) string {
@@ -32,10 +34,9 @@ COPY entrypoint.sh /opt/ore/entrypoint.sh
 COPY data/ /data/
 WORKDIR /data
 EXPOSE 25565
-%s
-ENTRYPOINT ["tini", "-s", "--", "/opt/ore/entrypoint.sh"]%s
+%sENTRYPOINT ["tini", "-s", "--", "/opt/ore/entrypoint.sh"]%s
 `, opts.Runtime.BaseImage, opts.Runtime.BinaryName, opts.Runtime.BinaryName,
-		dockerHealthcheck(opts.HealthRetries), cmdLine)
+		dockerHealthcheck(opts.HealthCheck), cmdLine)
 }
 
 func generateDirectDockerfile(opts DockerfileOptions) string {
@@ -45,16 +46,34 @@ COPY %s /opt/ore/%s
 COPY data/ /data/
 WORKDIR /data
 EXPOSE 25565
-%s
-ENTRYPOINT ["tini", "-s", "--", "/opt/ore/%s"]
+%sENTRYPOINT ["tini", "-s", "--", "/opt/ore/%s"]
 `, opts.Runtime.BaseImage, opts.Runtime.BinaryName, opts.Runtime.BinaryName,
-		dockerHealthcheck(opts.HealthRetries), opts.Runtime.BinaryName)
+		dockerHealthcheck(opts.HealthCheck), opts.Runtime.BinaryName)
 }
 
-func dockerHealthcheck(retries int) string {
-	return fmt.Sprintf(
-		`HEALTHCHECK --interval=2s --timeout=2s --start-period=5s --retries=%d \
-    CMD nc -z localhost 25565 || exit 1`,
-		retries,
-	)
+func dockerHealthcheck(hc *spec.HealthCheck) string {
+	if hc == nil || hc.Disabled || hc.Cmd == "" {
+		return ""
+	}
+
+	interval := hc.Interval
+	if interval == 0 {
+		interval = 2 * time.Second
+	}
+	timeout := hc.Timeout
+	if timeout == 0 {
+		timeout = 2 * time.Second
+	}
+	startPeriod := hc.StartPeriod
+	if startPeriod == 0 {
+		startPeriod = 5 * time.Second
+	}
+	retries := hc.Retries
+	if retries == 0 {
+		retries = 3
+	}
+
+	return fmt.Sprintf(`HEALTHCHECK --interval=%s --timeout=%s --start-period=%s --retries=%d \
+    CMD %s || exit 1
+`, interval, timeout, startPeriod, retries, hc.Cmd)
 }

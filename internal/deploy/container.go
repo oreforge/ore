@@ -105,7 +105,7 @@ func StartContainer(ctx context.Context, client docker.Client, srv *spec.Server,
 	return nil
 }
 
-func StartServiceContainer(ctx context.Context, client docker.Client, svc *spec.Service, containerName, networkName string, logger *slog.Logger) error {
+func StartServiceContainer(ctx context.Context, client docker.Client, svc *spec.Service, containerName, networkName string, hc *spec.HealthCheck, logger *slog.Logger) error {
 	if err := stopAndRemove(ctx, client, containerName, logger); err != nil {
 		return err
 	}
@@ -122,6 +122,16 @@ func StartServiceContainer(ctx context.Context, client docker.Client, svc *spec.
 			labelNetwork: networkName,
 			labelServer:  svc.Name,
 		},
+	}
+
+	if hc != nil && hc.Cmd != "" {
+		containerConfig.Healthcheck = &container.HealthConfig{
+			Test:        []string{"CMD-SHELL", hc.Cmd + " || exit 1"},
+			Interval:    hc.Interval,
+			Timeout:     hc.Timeout,
+			StartPeriod: hc.StartPeriod,
+			Retries:     hc.Retries,
+		}
 	}
 
 	hostConfig := &container.HostConfig{
@@ -259,6 +269,37 @@ func StopAllOreContainers(ctx context.Context, client docker.Client, networkName
 		}
 	}
 	return nil
+}
+
+func resolveServiceHealthCheck(user *spec.HealthCheck) *spec.HealthCheck {
+	if user == nil || user.Disabled || user.Cmd == "" {
+		return nil
+	}
+
+	interval := user.Interval
+	if interval == 0 {
+		interval = 10 * time.Second
+	}
+	timeout := user.Timeout
+	if timeout == 0 {
+		timeout = 5 * time.Second
+	}
+	startPeriod := user.StartPeriod
+	if startPeriod == 0 {
+		startPeriod = 30 * time.Second
+	}
+	retries := user.Retries
+	if retries == 0 {
+		retries = 3
+	}
+
+	return &spec.HealthCheck{
+		Cmd:         user.Cmd,
+		Interval:    interval,
+		Timeout:     timeout,
+		StartPeriod: startPeriod,
+		Retries:     retries,
+	}
 }
 
 func WaitForRunning(ctx context.Context, client docker.Client, containerName string, timeout time.Duration) error {
