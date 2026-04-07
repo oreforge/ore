@@ -4,9 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/signal"
 	"sync"
-	"syscall"
+	"time"
 
 	"golang.org/x/term"
 )
@@ -94,21 +93,22 @@ func Run(ctx context.Context, conn Conn) error {
 	}()
 
 	if isTTY {
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGWINCH)
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			defer signal.Stop(sigCh)
+			ticker := time.NewTicker(250 * time.Millisecond)
+			defer ticker.Stop()
+			lastW, lastH := width, height
 			for {
 				select {
 				case <-consoleCtx.Done():
 					return
-				case <-sigCh:
+				case <-ticker.C:
 					w, h, err := term.GetSize(fd)
-					if err != nil {
+					if err != nil || (w == lastW && h == lastH) {
 						continue
 					}
+					lastW, lastH = w, h
 					_ = conn.Resize(consoleCtx, w, h)
 				}
 			}
