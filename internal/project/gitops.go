@@ -132,6 +132,21 @@ func (m *Manager) TriggerDeploy(name string, opts UpOptions) bool {
 }
 
 func (m *Manager) syncDeploy(ctx context.Context, name string) {
+	logger := m.logger.With("project", name)
+
+	changed, err := m.hasRemoteChanges(ctx, name)
+	if err != nil {
+		if ctx.Err() != nil {
+			return
+		}
+		logger.Warn("failed to check for remote changes, skipping deploy", "error", err)
+		return
+	}
+	if !changed {
+		logger.Debug("no remote changes detected, skipping deploy")
+		return
+	}
+
 	if !m.acquireDeploy(name) {
 		return
 	}
@@ -141,7 +156,7 @@ func (m *Manager) syncDeploy(ctx context.Context, name string) {
 		if ctx.Err() != nil {
 			return
 		}
-		m.logger.Error("gitops deploy failed", "project", name, "error", err)
+		logger.Error("gitops deploy failed", "error", err)
 	}
 }
 

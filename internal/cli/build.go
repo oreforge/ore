@@ -21,7 +21,7 @@ type buildEnv struct {
 	repoRoot string
 }
 
-func newBuildEnv(ctx context.Context, opts build.Options) (*buildEnv, func(), error) {
+func newBuildEnv(ctx context.Context, specPath string, opts build.Options) (*buildEnv, func(), error) {
 	s, err := spec.Load(specPath)
 	if err != nil {
 		return nil, nil, err
@@ -76,8 +76,17 @@ ore build --no-cache`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			noCache, _ := cmd.Flags().GetBool("no-cache")
-			if localMode {
-				be, cleanup, err := newBuildEnv(cmd.Context(), build.Options{NoCache: noCache, ForceBuild: true})
+
+			local, specPath, remote, err := resolveMode(cmd)
+			if err != nil {
+				return err
+			}
+			if remote != nil {
+				defer func() { _ = remote.Close() }()
+			}
+
+			if local {
+				be, cleanup, err := newBuildEnv(cmd.Context(), specPath, build.Options{NoCache: noCache, ForceBuild: true})
 				if err != nil {
 					return err
 				}
@@ -86,7 +95,7 @@ ore build --no-cache`,
 				_, err = be.buildAll(cmd.Context())
 				return err
 			}
-			return remoteClient.Build(cmd.Context(), noCache)
+			return remote.Build(cmd.Context(), noCache)
 		},
 	}
 

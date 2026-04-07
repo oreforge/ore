@@ -18,8 +18,17 @@ ore up --no-cache --force`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			noCache, _ := cmd.Flags().GetBool("no-cache")
 			force, _ := cmd.Flags().GetBool("force")
-			if localMode {
-				be, cleanup, err := newBuildEnv(cmd.Context(), build.Options{NoCache: noCache})
+
+			local, specPath, remote, err := resolveMode(cmd)
+			if err != nil {
+				return err
+			}
+			if remote != nil {
+				defer func() { _ = remote.Close() }()
+			}
+
+			if local {
+				be, cleanup, err := newBuildEnv(cmd.Context(), specPath, build.Options{NoCache: noCache})
 				if err != nil {
 					return err
 				}
@@ -52,7 +61,7 @@ ore up --no-cache --force`,
 
 				return nil
 			}
-			return remoteClient.Up(cmd.Context(), project.UpOptions{
+			return remote.Up(cmd.Context(), project.UpOptions{
 				NoCache: noCache,
 				Force:   force,
 			})

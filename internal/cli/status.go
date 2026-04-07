@@ -21,11 +21,16 @@ func newStatusCmd() *cobra.Command {
 		Example: "ore status",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			var (
-				status *deploy.NetworkStatus
-				err    error
-			)
-			if localMode {
+			local, specPath, remote, err := resolveMode(cmd)
+			if err != nil {
+				return err
+			}
+			if remote != nil {
+				defer func() { _ = remote.Close() }()
+			}
+
+			var status *deploy.NetworkStatus
+			if local {
 				s, loadErr := spec.Load(specPath)
 				if loadErr != nil {
 					return loadErr
@@ -40,7 +45,7 @@ func newStatusCmd() *cobra.Command {
 				deployer := deploy.New(dockerClient, logger, nil, true)
 				status, err = deployer.Status(cmd.Context(), s)
 			} else {
-				status, err = remoteClient.Status(cmd.Context())
+				status, err = remote.Status(cmd.Context())
 			}
 			if err != nil {
 				return err

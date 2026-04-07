@@ -28,12 +28,19 @@ func newNodesCmd() *cobra.Command {
 	return cmd
 }
 
+func completeNodeNames(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+	if cfg == nil || len(cfg.Nodes) == 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	return slices.Sorted(maps.Keys(cfg.Nodes)), cobra.ShellCompDirectiveNoFileComp
+}
+
 func newNodesListCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:         "list",
-		Short:       "List configured nodes",
-		Example:     "ore nodes list",
-		Annotations: map[string]string{"skip-engine": "true"},
+		Use:     "list",
+		Short:   "List configured nodes",
+		Example: "ore nodes list",
+
 		RunE: func(_ *cobra.Command, _ []string) error {
 			if len(cfg.Nodes) == 0 {
 				fmt.Println("no nodes configured")
@@ -54,11 +61,11 @@ func newNodesListCmd() *cobra.Command {
 
 func newNodesAddCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:         "add <name>",
-		Short:       "Add a remote node",
-		Example:     "ore nodes add mynode --addr 192.168.1.10:9090 --token mytoken",
-		Args:        cobra.ExactArgs(1),
-		Annotations: map[string]string{"skip-engine": "true"},
+		Use:     "add <name>",
+		Short:   "Add a remote node",
+		Example: "ore nodes add mynode --addr 192.168.1.10:9090 --token mytoken",
+		Args:    cobra.ExactArgs(1),
+
 		RunE: func(cmd *cobra.Command, args []string) error {
 			addr, _ := cmd.Flags().GetString("addr")
 			token, _ := cmd.Flags().GetString("token")
@@ -102,10 +109,10 @@ func newNodesAddCmd() *cobra.Command {
 
 func newNodesRemoveCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:         "remove <name>",
-		Short:       "Remove a configured node",
-		Args:        cobra.ExactArgs(1),
-		Annotations: map[string]string{"skip-engine": "true"},
+		Use:               "remove <name>",
+		Short:             "Remove a configured node",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeNodeNames,
 		RunE: func(_ *cobra.Command, args []string) error {
 			if err := config.RemoveNode(args[0]); err != nil {
 				return err
@@ -119,11 +126,11 @@ func newNodesRemoveCmd() *cobra.Command {
 
 func newNodesUseCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:         "use <name>",
-		Short:       "Set the active node",
-		Example:     "ore nodes use prod",
-		Args:        cobra.ExactArgs(1),
-		Annotations: map[string]string{"skip-engine": "true"},
+		Use:               "use <name>",
+		Short:             "Set the active node",
+		Example:           "ore nodes use prod",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeNodeNames,
 		RunE: func(_ *cobra.Command, args []string) error {
 			if _, exists := cfg.Nodes[args[0]]; !exists {
 				return fmt.Errorf("node %q not found", args[0])
@@ -141,9 +148,9 @@ func newNodesUseCmd() *cobra.Command {
 
 func newNodesActiveCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:         "active",
-		Short:       "Show the active node",
-		Annotations: map[string]string{"skip-engine": "true"},
+		Use:   "active",
+		Short: "Show the active node",
+
 		RunE: func(_ *cobra.Command, _ []string) error {
 			if cfg.Context == "" {
 				fmt.Println("no active node")
@@ -157,11 +164,11 @@ func newNodesActiveCmd() *cobra.Command {
 
 func newNodesShowCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:         "show <name>",
-		Short:       "Show node details",
-		Example:     "ore nodes show prod",
-		Args:        cobra.ExactArgs(1),
-		Annotations: map[string]string{"skip-engine": "true"},
+		Use:               "show <name>",
+		Short:             "Show node details",
+		Example:           "ore nodes show prod",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeNodeNames,
 		RunE: func(_ *cobra.Command, args []string) error {
 			node, exists := cfg.Nodes[args[0]]
 			if !exists {

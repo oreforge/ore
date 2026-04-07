@@ -2,10 +2,10 @@ package cli
 
 import (
 	"fmt"
+	"net/url"
 
 	"github.com/spf13/cobra"
 
-	"github.com/oreforge/ore/internal/client"
 	"github.com/oreforge/ore/internal/config"
 )
 
@@ -28,11 +28,18 @@ func newProjectsCmd() *cobra.Command {
 	return cmd
 }
 
-func requireRemote() (*client.Client, error) {
-	if remoteClient == nil {
-		return nil, fmt.Errorf("project management is only available in remote mode")
+func completeProjectNames(cmd *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+	r, err := connectNode()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	return remoteClient, nil
+	defer func() { _ = r.Close() }()
+
+	projects, err := r.ListProjects(cmd.Context())
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	return projects, cobra.ShellCompDirectiveNoFileComp
 }
 
 func newProjectsListCmd() *cobra.Command {
@@ -41,18 +48,18 @@ func newProjectsListCmd() *cobra.Command {
 		Short:   "List remote projects",
 		Example: "ore projects list",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			r, err := requireRemote()
+			r, err := connectNode()
 			if err != nil {
 				return err
 			}
-
-			_, _, active, _ := config.ResolveRemote(cfg)
+			defer func() { _ = r.Close() }()
 
 			projects, err := r.ListProjects(cmd.Context())
 			if err != nil {
 				return err
 			}
 
+			active := r.Project()
 			for _, p := range projects {
 				if p == active {
 					fmt.Printf("* %s\n", p)
@@ -72,10 +79,11 @@ func newProjectsAddCmd() *cobra.Command {
 		Example: "ore projects add https://github.com/user/repo.git",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			r, err := requireRemote()
+			r, err := connectNode()
 			if err != nil {
 				return err
 			}
+			defer func() { _ = r.Close() }()
 
 			name, _ := cmd.Flags().GetString("name")
 			projectName, err := r.AddProject(cmd.Context(), args[0], name)
@@ -95,14 +103,16 @@ func newProjectsAddCmd() *cobra.Command {
 
 func newProjectsRemoveCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "remove <name>",
-		Short: "Stop servers and remove a project",
-		Args:  cobra.ExactArgs(1),
+		Use:               "remove <name>",
+		Short:             "Stop servers and remove a project",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeProjectNames,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			r, err := requireRemote()
+			r, err := connectNode()
 			if err != nil {
 				return err
 			}
+			defer func() { _ = r.Close() }()
 
 			if err := r.RemoveProject(cmd.Context(), args[0]); err != nil {
 				return err
@@ -116,15 +126,17 @@ func newProjectsRemoveCmd() *cobra.Command {
 
 func newProjectsUpdateCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:     "update <name>",
-		Short:   "Pull latest changes and redeploy",
-		Example: "ore projects update my-network",
-		Args:    cobra.ExactArgs(1),
+		Use:               "update <name>",
+		Short:             "Pull latest changes and redeploy",
+		Example:           "ore projects update my-network",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeProjectNames,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			r, err := requireRemote()
+			r, err := connectNode()
 			if err != nil {
 				return err
 			}
+			defer func() { _ = r.Close() }()
 
 			if err := r.UpdateProject(cmd.Context(), args[0]); err != nil {
 				return err
@@ -138,15 +150,17 @@ func newProjectsUpdateCmd() *cobra.Command {
 
 func newProjectsUseCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:     "use <name>",
-		Short:   "Set the active project",
-		Example: "ore projects use my-network",
-		Args:    cobra.ExactArgs(1),
+		Use:               "use <name>",
+		Short:             "Set the active project",
+		Example:           "ore projects use my-network",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeProjectNames,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			r, err := requireRemote()
+			r, err := connectNode()
 			if err != nil {
 				return err
 			}
+			defer func() { _ = r.Close() }()
 
 			projects, err := r.ListProjects(cmd.Context())
 			if err != nil {
@@ -175,15 +189,17 @@ func newProjectsUseCmd() *cobra.Command {
 
 func newProjectsWebhookCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "webhook <name>",
-		Short:   "Show the webhook URL for a project",
-		Example: "ore projects webhook my-network",
-		Args:    cobra.ExactArgs(1),
+		Use:               "webhook <name>",
+		Short:             "Show the webhook URL for a project",
+		Example:           "ore projects webhook my-network",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeProjectNames,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			r, err := requireRemote()
+			r, err := connectNode()
 			if err != nil {
 				return err
 			}
+			defer func() { _ = r.Close() }()
 
 			info, err := r.WebhookInfo(cmd.Context(), args[0])
 			if err != nil {
@@ -199,11 +215,20 @@ func newProjectsWebhookCmd() *cobra.Command {
 			force, _ := cmd.Flags().GetBool("force")
 			noCache, _ := cmd.Flags().GetBool("no-cache")
 
-			if force {
-				webhookURL += "&force=true"
-			}
-			if noCache {
-				webhookURL += "&no_cache=true"
+			if force || noCache {
+				u, err := url.Parse(webhookURL)
+				if err != nil {
+					return fmt.Errorf("parsing webhook URL: %w", err)
+				}
+				q := u.Query()
+				if force {
+					q.Set("force", "true")
+				}
+				if noCache {
+					q.Set("no_cache", "true")
+				}
+				u.RawQuery = q.Encode()
+				webhookURL = u.String()
 			}
 
 			addr, _, _, _ := config.ResolveRemote(cfg)
@@ -220,9 +245,8 @@ func newProjectsWebhookCmd() *cobra.Command {
 
 func newProjectsActiveCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:         "active",
-		Short:       "Show the active project",
-		Annotations: map[string]string{"skip-engine": "true"},
+		Use:   "active",
+		Short: "Show the active project",
 		RunE: func(_ *cobra.Command, _ []string) error {
 			_, _, project, _ := config.ResolveRemote(cfg)
 			if project == "" {

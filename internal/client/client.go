@@ -31,9 +31,6 @@ type Client struct {
 }
 
 func New(addr, token, project string) (*Client, error) {
-	if project == "" {
-		return nil, fmt.Errorf("no active project set (use 'ore projects use <name>' to select one)")
-	}
 	host, httpScheme, wsScheme := parseAddr(addr)
 	return &Client{
 		addr:       host,
@@ -89,20 +86,32 @@ func (c *Client) projectPath() string {
 }
 
 func (c *Client) Up(ctx context.Context, opts project.UpOptions) error {
+	if err := c.requireProject(); err != nil {
+		return err
+	}
 	body, _ := json.Marshal(map[string]any{"no_cache": opts.NoCache, "force": opts.Force})
 	return c.streamRequest(ctx, "POST", c.projectPath()+"/up", body)
 }
 
 func (c *Client) Down(ctx context.Context) error {
+	if err := c.requireProject(); err != nil {
+		return err
+	}
 	return c.streamRequest(ctx, "POST", c.projectPath()+"/down", nil)
 }
 
 func (c *Client) Build(ctx context.Context, noCache bool) error {
+	if err := c.requireProject(); err != nil {
+		return err
+	}
 	body, _ := json.Marshal(map[string]any{"no_cache": noCache})
 	return c.streamRequest(ctx, "POST", c.projectPath()+"/build", body)
 }
 
 func (c *Client) Status(ctx context.Context) (*deploy.NetworkStatus, error) {
+	if err := c.requireProject(); err != nil {
+		return nil, err
+	}
 	req, err := c.newRequest(ctx, "GET", c.projectPath()+"/status", nil)
 	if err != nil {
 		return nil, err
@@ -126,16 +135,25 @@ func (c *Client) Status(ctx context.Context) (*deploy.NetworkStatus, error) {
 }
 
 func (c *Client) Prune(ctx context.Context, target project.PruneTarget) error {
+	if err := c.requireProject(); err != nil {
+		return err
+	}
 	body, _ := json.Marshal(map[string]any{"target": target.String()})
 	return c.streamRequest(ctx, "POST", c.projectPath()+"/prune", body)
 }
 
 func (c *Client) Clean(ctx context.Context, target project.CleanTarget) error {
+	if err := c.requireProject(); err != nil {
+		return err
+	}
 	body, _ := json.Marshal(map[string]any{"target": target.String()})
 	return c.streamRequest(ctx, "POST", c.projectPath()+"/clean", body)
 }
 
 func (c *Client) Console(ctx context.Context, serverName string) error {
+	if err := c.requireProject(); err != nil {
+		return err
+	}
 	cols, rows := 80, 24
 	fd := int(os.Stdin.Fd())
 	if term.IsTerminal(fd) {
@@ -170,7 +188,22 @@ func (c *Client) Console(ctx context.Context, serverName string) error {
 	return console.Run(ctx, &console.WSConn{Conn: conn})
 }
 
+func (c *Client) Project() string {
+	return c.project
+}
+
+func (c *Client) SetProject(p string) {
+	c.project = p
+}
+
 func (c *Client) Close() error {
+	return nil
+}
+
+func (c *Client) requireProject() error {
+	if c.project == "" {
+		return fmt.Errorf("no active project set (use 'ore projects use <name>' to select one)")
+	}
 	return nil
 }
 

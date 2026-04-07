@@ -8,12 +8,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
 type WorkDir struct {
 	root     string
 	logger   *slog.Logger
+	mu       sync.Mutex
 	manifest *Manifest
 }
 
@@ -78,6 +80,7 @@ func (w *WorkDir) StoreBinary(sha256hex string, data []byte, softwareID, url str
 		return fmt.Errorf("renaming to cache: %w", err)
 	}
 
+	w.mu.Lock()
 	w.manifest.Binaries[sha256hex] = BinaryEntry{
 		SoftwareID: softwareID,
 		Filename:   filename,
@@ -86,6 +89,7 @@ func (w *WorkDir) StoreBinary(sha256hex string, data []byte, softwareID, url str
 		Size:       int64(len(data)),
 		CachedAt:   time.Now(),
 	}
+	w.mu.Unlock()
 
 	shortHash := sha256hex
 	if len(shortHash) > 12 {
@@ -135,6 +139,9 @@ func (w *WorkDir) CleanOldBuilds(serverName, currentCacheKey string) {
 	prefix := serverName + "-"
 	currentDir := serverName + "-" + currentCacheKey
 
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -178,12 +185,25 @@ func copyDir(src, dst string) error {
 		if info.IsDir() {
 			return os.MkdirAll(target, 0o755)
 		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(target, data, info.Mode())
+		return copyFile(path, target, info.Mode())
 	})
+}
+
+func copyFile(src, dst string, mode os.FileMode) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = in.Close() }()
+
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = out.Close() }()
+
+	_, err = io.Copy(out, in)
+	return err
 }
 
 func (w *WorkDir) WriteBinary(serverName, cacheKey, name string, data []byte, mode os.FileMode) error {
@@ -225,6 +245,7 @@ func (w *WorkDir) WriteMetadata(serverName, cacheKey string, meta Metadata) erro
 		return err
 	}
 
+	w.mu.Lock()
 	w.manifest.Builds[serverName+"-"+cacheKey] = Entry{
 		ServerName: serverName,
 		ImageTag:   meta.ImageTag,
@@ -233,6 +254,7 @@ func (w *WorkDir) WriteMetadata(serverName, cacheKey string, meta Metadata) erro
 		BuiltAt:    meta.StartedAt,
 		DurationMs: meta.DurationMs,
 	}
+	w.mu.Unlock()
 
 	return nil
 }
@@ -295,7 +317,7 @@ func (w *WorkDir) Prune(maxAge time.Duration) error {
 		if entry.CachedAt.Before(cutoff) {
 			_ = os.Remove(w.binaryPath(entry.SoftwareID, entry.Filename))
 			dirName := strings.ReplaceAll(entry.SoftwareID, ":", "-")
-			_ = os.Remove(filepath.Join(w.root, "cache", dirName))
+			_ = os.RemoveAll(filepath.Join(w.root, "cache", dirName))
 			binaryKeys = append(binaryKeys, hash)
 		}
 	}

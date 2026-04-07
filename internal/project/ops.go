@@ -82,17 +82,22 @@ func (m *Manager) doBuild(ctx context.Context, specPath string, opts build.Optio
 		return nil, fmt.Errorf("connecting to Docker: %w", err)
 	}
 
+	ok := false
+	defer func() {
+		if !ok {
+			_ = dockerClient.Close()
+		}
+	}()
+
 	repoRoot := filepath.Dir(specPath)
 	wd, err := build.NewWorkDir(repoRoot, logger)
 	if err != nil {
-		_ = dockerClient.Close()
 		return nil, fmt.Errorf("initializing .ore directory: %w", err)
 	}
 
 	builder := build.NewBuilder(dockerClient, providers.New(), logger, wd, opts)
 	images, err := builder.BuildAll(ctx, s, repoRoot)
 	if err != nil {
-		_ = dockerClient.Close()
 		return nil, err
 	}
 
@@ -100,6 +105,7 @@ func (m *Manager) doBuild(ctx context.Context, specPath string, opts build.Optio
 		logger.Info("built image", "server", name, "tag", res.ImageTag)
 	}
 
+	ok = true
 	return &buildResult{
 		images:  images,
 		spec:    s,
@@ -232,7 +238,9 @@ func ExecutePrune(ctx context.Context, deployer *deploy.Deployer, s *spec.Networ
 				errs = append(errs, fmt.Errorf("cleaning .ore directory: %w", cleanErr))
 			}
 		}
-		logger.Info("cleaned all resources")
+		if len(errs) == 0 {
+			logger.Info("cleaned all resources")
+		}
 		return errors.Join(errs...)
 	case PruneContainers:
 		return deployer.Down(ctx, s)

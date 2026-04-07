@@ -18,11 +18,8 @@ type BuildInfo struct {
 }
 
 var (
-	localMode    bool
-	specPath     string
-	remoteClient *client.Client
-	cfg          *config.OreConfig
-	logger       *slog.Logger
+	cfg    *config.OreConfig
+	logger *slog.Logger
 )
 
 func Run(args []string, info BuildInfo) int {
@@ -43,24 +40,6 @@ func Run(args []string, info BuildInfo) int {
 			}
 			logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 			slog.SetDefault(logger)
-
-			if cmd.Annotations["skip-engine"] == "true" {
-				return nil
-			}
-
-			specFile, _ := cmd.Flags().GetString("file")
-			if _, statErr := os.Stat(specFile); statErr == nil {
-				localMode = true
-				specPath = specFile
-			} else if addr, token, project, ok := config.ResolveRemote(cfg); ok {
-				var remoteErr error
-				remoteClient, remoteErr = client.New(addr, token, project)
-				if remoteErr != nil {
-					return fmt.Errorf("connecting to ored: %w", remoteErr)
-				}
-			} else {
-				return fmt.Errorf("no %s found and no remote node configured", specFile)
-			}
 
 			return nil
 		},
@@ -93,14 +72,48 @@ func Run(args []string, info BuildInfo) int {
 	root.Long = buildLongDescription(cfg)
 	root.SetArgs(args[1:])
 	err = root.Execute()
-	if remoteClient != nil {
-		_ = remoteClient.Close()
-	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		return 1
 	}
 	return 0
+}
+
+func resolveMode(cmd *cobra.Command) (local bool, specPath string, remote *client.Client, err error) {
+	specFile, _ := cmd.Flags().GetString("file")
+	if _, statErr := os.Stat(specFile); statErr == nil {
+		return true, specFile, nil, nil
+	}
+
+	addr, token, project, ok := config.ResolveRemote(cfg)
+	if !ok {
+		return false, "", nil, fmt.Errorf("no %s found and no remote node configured", specFile)
+	}
+
+	if project == "" {
+		return false, "", nil, fmt.Errorf("no active project set (use 'ore projects use <name>' to select one)")
+	}
+
+	c, err := client.New(addr, token, project)
+	if err != nil {
+		return false, "", nil, fmt.Errorf("connecting to ored: %w", err)
+	}
+
+	return false, "", c, nil
+}
+
+func connectNode() (*client.Client, error) {
+	addr, token, project, ok := config.ResolveRemote(cfg)
+	if !ok {
+		return nil, fmt.Errorf("no remote node configured (use 'ore nodes add' to set one up)")
+	}
+
+	c, err := client.New(addr, token, project)
+	if err != nil {
+		return nil, fmt.Errorf("connecting to ored: %w", err)
+	}
+
+	return c, nil
 }
 
 func buildLongDescription(cfg *config.OreConfig) string {

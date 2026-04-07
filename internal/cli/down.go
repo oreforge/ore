@@ -17,7 +17,15 @@ func newDownCmd() *cobra.Command {
 		Example: "ore down",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if localMode {
+			local, specPath, remote, err := resolveMode(cmd)
+			if err != nil {
+				return err
+			}
+			if remote != nil {
+				defer func() { _ = remote.Close() }()
+			}
+
+			if local {
 				s, err := spec.Load(specPath)
 				if err != nil {
 					return err
@@ -32,7 +40,7 @@ func newDownCmd() *cobra.Command {
 				deployer := deploy.New(dockerClient, logger, nil, true)
 				return deployer.Down(cmd.Context(), s)
 			}
-			return remoteClient.Down(cmd.Context())
+			return remote.Down(cmd.Context())
 		},
 	}
 }

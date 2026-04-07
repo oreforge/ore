@@ -38,10 +38,18 @@ func newCleanAllCmd() *cobra.Command {
 		Example: "ore clean all",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if localMode {
-				return pruneLocal(cmd, project.PruneAll)
+			local, specPath, remote, err := resolveMode(cmd)
+			if err != nil {
+				return err
 			}
-			return remoteClient.Prune(cmd.Context(), project.PruneAll)
+			if remote != nil {
+				defer func() { _ = remote.Close() }()
+			}
+
+			if local {
+				return pruneLocal(cmd, specPath, project.PruneAll)
+			}
+			return remote.Prune(cmd.Context(), project.PruneAll)
 		},
 	}
 }
@@ -52,10 +60,18 @@ func newCleanCacheCmd() *cobra.Command {
 		Short: "Remove cached binaries",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if localMode {
-				return cleanLocalDir("cache")
+			local, specPath, remote, err := resolveMode(cmd)
+			if err != nil {
+				return err
 			}
-			return remoteClient.Clean(cmd.Context(), project.CleanCache)
+			if remote != nil {
+				defer func() { _ = remote.Close() }()
+			}
+
+			if local {
+				return cleanLocalDir(specPath, "cache")
+			}
+			return remote.Clean(cmd.Context(), project.CleanCache)
 		},
 	}
 }
@@ -66,10 +82,18 @@ func newCleanBuildsCmd() *cobra.Command {
 		Short: "Remove build artifacts",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if localMode {
-				return cleanLocalDir("builds")
+			local, specPath, remote, err := resolveMode(cmd)
+			if err != nil {
+				return err
 			}
-			return remoteClient.Clean(cmd.Context(), project.CleanBuilds)
+			if remote != nil {
+				defer func() { _ = remote.Close() }()
+			}
+
+			if local {
+				return cleanLocalDir(specPath, "builds")
+			}
+			return remote.Clean(cmd.Context(), project.CleanBuilds)
 		},
 	}
 }
@@ -80,10 +104,18 @@ func newCleanServersCmd() *cobra.Command {
 		Short: "Stop and remove all running servers",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if localMode {
-				return pruneLocal(cmd, project.PruneContainers)
+			local, specPath, remote, err := resolveMode(cmd)
+			if err != nil {
+				return err
 			}
-			return remoteClient.Prune(cmd.Context(), project.PruneContainers)
+			if remote != nil {
+				defer func() { _ = remote.Close() }()
+			}
+
+			if local {
+				return pruneLocal(cmd, specPath, project.PruneContainers)
+			}
+			return remote.Prune(cmd.Context(), project.PruneContainers)
 		},
 	}
 }
@@ -94,10 +126,18 @@ func newCleanImagesCmd() *cobra.Command {
 		Short: "Remove unused server images",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if localMode {
-				return pruneLocal(cmd, project.PruneImages)
+			local, specPath, remote, err := resolveMode(cmd)
+			if err != nil {
+				return err
 			}
-			return remoteClient.Prune(cmd.Context(), project.PruneImages)
+			if remote != nil {
+				defer func() { _ = remote.Close() }()
+			}
+
+			if local {
+				return pruneLocal(cmd, specPath, project.PruneImages)
+			}
+			return remote.Prune(cmd.Context(), project.PruneImages)
 		},
 	}
 }
@@ -109,15 +149,23 @@ func newCleanDataCmd() *cobra.Command {
 		Example: "ore clean data",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if localMode {
-				return pruneLocal(cmd, project.PruneVolumes)
+			local, specPath, remote, err := resolveMode(cmd)
+			if err != nil {
+				return err
 			}
-			return remoteClient.Prune(cmd.Context(), project.PruneVolumes)
+			if remote != nil {
+				defer func() { _ = remote.Close() }()
+			}
+
+			if local {
+				return pruneLocal(cmd, specPath, project.PruneVolumes)
+			}
+			return remote.Prune(cmd.Context(), project.PruneVolumes)
 		},
 	}
 }
 
-func cleanLocalDir(target string) error {
+func cleanLocalDir(specPath, target string) error {
 	repoRoot := filepath.Dir(specPath)
 	wd, err := build.NewWorkDir(repoRoot, logger)
 	if err != nil {
@@ -129,7 +177,7 @@ func cleanLocalDir(target string) error {
 	return wd.CleanBuilds()
 }
 
-func pruneLocal(cmd *cobra.Command, target project.PruneTarget) error {
+func pruneLocal(cmd *cobra.Command, specPath string, target project.PruneTarget) error {
 	s, err := spec.Load(specPath)
 	if err != nil {
 		return err
