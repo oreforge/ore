@@ -516,7 +516,7 @@ func (rs ProjectResource) webhookInfo(c fuego.ContextNoBody) (dto.WebhookInfoRes
 	}
 
 	secret := webhook.DeriveSecret(rs.Token, name)
-	webhookURL := fmt.Sprintf("/webhook/%s?secret=%s", url.PathEscape(name), secret)
+	webhookURL := fmt.Sprintf("/api/webhook/%s?secret=%s", url.PathEscape(name), secret)
 
 	return dto.WebhookInfoResponse{
 		Enabled: true,

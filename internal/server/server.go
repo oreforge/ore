@@ -78,7 +78,7 @@ func New(pm *project.Manager, token string, logger *slog.Logger, logLevel slog.L
 
 	controllers.ProjectResource{PM: pm, DockerClient: dockerClient, LogLevel: logLevel, Logger: logger, Token: token}.MountRoutes(api)
 
-	webhookGroup := fuego.Group(s, "/webhook")
+	webhookGroup := fuego.Group(s, "/api/webhook")
 	fuego.Use(webhookGroup, mw.CORS())
 	fuego.Use(webhookGroup, mw.RequestLogger(logger))
 	controllers.WebhookResource{PM: pm, Token: token, Logger: logger}.MountRoutes(webhookGroup)
