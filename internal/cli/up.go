@@ -55,7 +55,7 @@ ore up --no-cache --force`,
 
 				if be.workDir != nil && newState != nil {
 					if saveErr := deploy.SaveState(be.workDir.Root(), newState); saveErr != nil {
-						logger.Warn("failed to save deploy state", "error", saveErr)
+						logger.Warn("failed to save deploy state", "network", be.spec.Network, "error", saveErr)
 					}
 				}
 

@@ -101,10 +101,6 @@ func (m *Manager) doBuild(ctx context.Context, specPath string, opts build.Optio
 		return nil, err
 	}
 
-	for name, res := range images {
-		logger.Info("built image", "server", name, "tag", res.ImageTag)
-	}
-
 	ok = true
 	return &buildResult{
 		images:  images,
@@ -142,7 +138,7 @@ func (m *Manager) Up(ctx context.Context, name string, opts UpOptions, logger *s
 
 	if br.workDir != nil && newState != nil {
 		if saveErr := deploy.SaveState(br.workDir.Root(), newState); saveErr != nil {
-			logger.Warn("failed to save deploy state", "error", saveErr)
+			logger.Warn("failed to save deploy state", "project", name, "error", saveErr)
 		}
 	}
 
@@ -239,7 +235,7 @@ func ExecutePrune(ctx context.Context, deployer *deploy.Deployer, s *spec.Networ
 			}
 		}
 		if len(errs) == 0 {
-			logger.Info("cleaned all resources")
+			logger.Info("cleaned all resources", "network", s.Network)
 		}
 		return errors.Join(errs...)
 	case PruneContainers:

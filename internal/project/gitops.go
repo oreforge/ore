@@ -164,7 +164,7 @@ func (m *Manager) acquireDeploy(name string) bool {
 	m.deployMu.Lock()
 	defer m.deployMu.Unlock()
 	if m.deploying[name] {
-		m.logger.Info("deploy already in progress, skipping", "project", name)
+		m.logger.Warn("deploy already in progress, skipping", "project", name)
 		return false
 	}
 	m.deploying[name] = true

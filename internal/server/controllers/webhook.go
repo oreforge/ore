@@ -81,6 +81,7 @@ func (rs WebhookResource) handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !webhook.ValidateSecret(rs.Token, name, secret) {
+		rs.Logger.Warn("webhook secret validation failed", "project", name, "remote_addr", r.RemoteAddr)
 		errs.Write(w, http.StatusUnauthorized, "invalid secret")
 		return
 	}

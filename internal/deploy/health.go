@@ -39,7 +39,7 @@ func WaitForHealthy(ctx context.Context, client docker.Client, containerName str
 			if info.State.Health != nil {
 				switch info.State.Health.Status {
 				case "healthy":
-					logger.Info("health check passed", "container", containerName)
+					logger.Debug("health check passed", "container", containerName)
 					return nil
 				case "unhealthy":
 					return fmt.Errorf("container %s is unhealthy", containerName)
@@ -47,7 +47,7 @@ func WaitForHealthy(ctx context.Context, client docker.Client, containerName str
 					logger.Debug("container health starting", "container", containerName, "status", info.State.Health.Status)
 				}
 			} else if info.State.Running {
-				logger.Info("container running (no healthcheck)", "container", containerName)
+				logger.Debug("container running (no healthcheck)", "container", containerName)
 				return nil
 			}
 		}

@@ -23,7 +23,7 @@ func EnsureNetwork(ctx context.Context, client docker.Client, name string, logge
 		}
 	}
 
-	logger.Info("creating network", "network", name)
+	logger.Debug("creating network", "network", name)
 	_, err = client.NetworkCreate(ctx, name, network.CreateOptions{
 		Driver: "bridge",
 	})
@@ -35,6 +35,6 @@ func EnsureNetwork(ctx context.Context, client docker.Client, name string, logge
 }
 
 func RemoveNetwork(ctx context.Context, client docker.Client, name string, logger *slog.Logger) error {
-	logger.Info("removing network", "network", name)
+	logger.Debug("removing network", "network", name)
 	return client.NetworkRemove(ctx, name)
 }

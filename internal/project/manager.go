@@ -78,6 +78,7 @@ func (m *Manager) Resolve(name string) (string, error) {
 }
 
 func (m *Manager) Pull(ctx context.Context, name string) error {
+	m.logger.Debug("pulling latest changes", "project", name)
 	projectDir := filepath.Join(m.projectsDir, name)
 	if _, err := os.Stat(filepath.Join(projectDir, ".git")); err != nil {
 		return fmt.Errorf("project %s is not a git repository", name)

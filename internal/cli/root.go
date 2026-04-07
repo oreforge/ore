@@ -82,6 +82,7 @@ func Run(args []string, info BuildInfo) int {
 func resolveMode(cmd *cobra.Command) (local bool, specPath string, remote *client.Client, err error) {
 	specFile, _ := cmd.Flags().GetString("file")
 	if _, statErr := os.Stat(specFile); statErr == nil {
+		logger.Debug("using local spec", "file", specFile)
 		return true, specFile, nil, nil
 	}
 
@@ -99,6 +100,7 @@ func resolveMode(cmd *cobra.Command) (local bool, specPath string, remote *clien
 		return false, "", nil, fmt.Errorf("connecting to ored: %w", err)
 	}
 
+	logger.Debug("using remote node", "addr", addr, "project", project)
 	return false, "", c, nil
 }
 

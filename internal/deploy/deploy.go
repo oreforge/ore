@@ -57,7 +57,7 @@ func (o UpOptions) prevService(name string) ServiceState {
 func (d *Deployer) Up(ctx context.Context, cfg *spec.Network, images map[string]build.Result, opts UpOptions) (*State, error) {
 	if opts.Force || opts.PrevState == nil {
 		if err := StopAllOreContainers(ctx, d.docker, cfg.Network, d.logger); err != nil {
-			d.logger.Warn("failed to clean orphaned containers", "error", err)
+			d.logger.Warn("failed to clean orphaned containers", "network", cfg.Network, "error", err)
 		}
 	} else {
 		d.stopRemovedContainers(ctx, cfg, opts.PrevState)
@@ -86,7 +86,7 @@ func (d *Deployer) Up(ctx context.Context, cfg *spec.Network, images map[string]
 
 			prev := opts.prevService(svc.Name)
 			if d.unchanged(svcCtx, name, svc.Image, prev.Image, configHash, prev.ConfigHash, opts) {
-				d.logger.Info("service unchanged, skipping", "service", name)
+				d.logger.Debug("service unchanged, skipping", "service", name)
 				svcMu.Lock()
 				svcResults = append(svcResults, serviceResult{svc.Name, svc.Image, configHash})
 				svcMu.Unlock()
@@ -161,7 +161,7 @@ func (d *Deployer) Up(ctx context.Context, cfg *spec.Network, images map[string]
 
 		prev := opts.prevServer(srv.Name)
 		if d.unchanged(ctx, name, tag, prev.ImageTag, configHash, prev.ConfigHash, opts) {
-			d.logger.Info("server unchanged, skipping", "server", name)
+			d.logger.Debug("server unchanged, skipping", "server", name)
 			mu.Lock()
 			serverResults = append(serverResults, serverResult{srv.Name, tag, configHash})
 			mu.Unlock()
@@ -277,7 +277,7 @@ func (d *Deployer) resolveDataBind(imageTag, serverName string) string {
 
 func (d *Deployer) Down(ctx context.Context, cfg *spec.Network) error {
 	if err := StopAllOreContainers(ctx, d.docker, cfg.Network, d.logger); err != nil {
-		d.logger.Warn("failed to stop containers by label", "error", err)
+		d.logger.Warn("failed to stop containers by label", "network", cfg.Network, "error", err)
 	}
 
 	downG, downCtx := errgroup.WithContext(ctx)
@@ -321,7 +321,7 @@ func (d *Deployer) PruneImages(ctx context.Context, cfg *spec.Network) error {
 		for _, tag := range img.RepoTags {
 			for _, srv := range cfg.Servers {
 				if strings.HasPrefix(tag, "ore/"+srv.Name+":") {
-					d.logger.Info("removing image", "tag", tag)
+					d.logger.Debug("removing image", "tag", tag)
 					if _, err := d.docker.ImageRemove(ctx, tag, image.RemoveOptions{Force: true}); err != nil {
 						d.logger.Warn("failed to remove image", "tag", tag, "error", err)
 					}
@@ -333,14 +333,14 @@ func (d *Deployer) PruneImages(ctx context.Context, cfg *spec.Network) error {
 	for _, img := range images {
 		if len(img.RepoTags) == 0 && len(img.RepoDigests) == 0 {
 			shortID := img.ID[:min(19, len(img.ID))]
-			d.logger.Info("removing dangling image", "id", shortID)
+			d.logger.Debug("removing dangling image", "id", shortID)
 			if _, err := d.docker.ImageRemove(ctx, img.ID, image.RemoveOptions{}); err != nil {
 				d.logger.Debug("failed to remove dangling image", "id", shortID, "error", err)
 			}
 		}
 	}
 
-	d.logger.Info("pruned images")
+	d.logger.Info("pruned images", "network", cfg.Network)
 	return nil
 }
 
@@ -357,7 +357,7 @@ func (d *Deployer) PruneVolumes(ctx context.Context, cfg *spec.Network) error {
 		}
 	}
 
-	d.logger.Info("pruned volumes")
+	d.logger.Info("pruned volumes", "network", cfg.Network)
 	return nil
 }
 

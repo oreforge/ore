@@ -97,7 +97,7 @@ func (b *Builder) BuildAll(ctx context.Context, cfg *spec.Network, repoRoot stri
 func (b *Builder) Build(ctx context.Context, srv *spec.Server, repoRoot string) (Result, error) {
 	startedAt := time.Now()
 
-	b.logger.Info("resolving software", "server", srv.Name, "software", srv.Software)
+	b.logger.Debug("resolving software", "server", srv.Name, "software", srv.Software)
 
 	artifact, err := b.resolver.Resolve(ctx, srv.Software)
 	if err != nil {
@@ -153,7 +153,7 @@ func (b *Builder) Build(ctx context.Context, srv *spec.Server, repoRoot string) 
 	}
 
 	duration := time.Since(startedAt)
-	b.logger.Info("image built", "server", srv.Name, "tag", imageTag, "duration", duration)
+	b.logger.Info("image built", "server", srv.Name, "tag", imageTag, "duration_ms", duration.Milliseconds())
 
 	if b.workDir != nil {
 		meta := Metadata{
@@ -168,7 +168,7 @@ func (b *Builder) Build(ctx context.Context, srv *spec.Server, repoRoot string) 
 			DurationMs:   duration.Milliseconds(),
 		}
 		if err := b.workDir.WriteMetadata(srv.Name, cacheKey, meta); err != nil {
-			b.logger.Warn("failed to write build metadata", "error", err)
+			b.logger.Warn("failed to write build metadata", "server", srv.Name, "error", err)
 		}
 	}
 
@@ -319,7 +319,7 @@ func (b *Builder) fetchBinary(ctx context.Context, srv *spec.Server, artifact *s
 		if err == nil {
 			return data, true, nil
 		}
-		b.logger.Warn("failed to read cached binary, re-downloading", "error", err)
+		b.logger.Warn("failed to read cached binary, re-downloading", "server", srv.Name, "error", err)
 	}
 
 	b.logger.Info("downloading binary", "server", srv.Name, "url", artifact.URL)
@@ -338,7 +338,7 @@ func (b *Builder) fetchBinary(ctx context.Context, srv *spec.Server, artifact *s
 
 		if b.workDir != nil {
 			if storeErr := b.workDir.StoreBinary(actualHash, data, srv.Software, artifact.URL); storeErr != nil {
-				b.logger.Warn("failed to cache binary", "error", storeErr)
+				b.logger.Warn("failed to cache binary", "server", srv.Name, "error", storeErr)
 			}
 		}
 

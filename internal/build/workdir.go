@@ -273,7 +273,7 @@ func (w *WorkDir) Clean() error {
 }
 
 func (w *WorkDir) CleanCache() error {
-	w.logger.Info("removing cached binaries")
+	w.logger.Info("removing cached binaries", "path", filepath.Join(w.root, "cache"))
 	if err := os.RemoveAll(filepath.Join(w.root, "cache")); err != nil {
 		return err
 	}
@@ -285,7 +285,7 @@ func (w *WorkDir) CleanCache() error {
 }
 
 func (w *WorkDir) CleanBuilds() error {
-	w.logger.Info("removing build artifacts")
+	w.logger.Info("removing build artifacts", "path", filepath.Join(w.root, "builds"))
 	if err := os.RemoveAll(filepath.Join(w.root, "builds")); err != nil {
 		return err
 	}

@@ -30,7 +30,7 @@ func StartContainer(ctx context.Context, client docker.Client, srv *spec.Server,
 		return err
 	}
 
-	logger.Info("creating container", "name", containerName, "image", imageTag)
+	logger.Debug("creating container", "name", containerName, "image", imageTag)
 
 	env := buildEnvList(srv)
 
@@ -110,7 +110,7 @@ func StartServiceContainer(ctx context.Context, client docker.Client, svc *spec.
 		return err
 	}
 
-	logger.Info("creating service container", "name", containerName, "image", svc.Image)
+	logger.Debug("creating service container", "name", containerName, "image", svc.Image)
 
 	containerConfig := &container.Config{
 		Image:     svc.Image,

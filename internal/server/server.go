@@ -144,6 +144,7 @@ func Run(_ []string, info BuildInfo) int {
 			"addr", cfg.Addr,
 			"config", config.OredConfigFile(),
 			"projects", cfg.Projects,
+			"bind_mounts", cfg.BindMounts,
 		)
 		if listenErr := s.Run(); listenErr != nil {
 			errCh <- listenErr

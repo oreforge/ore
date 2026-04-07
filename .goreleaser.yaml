@@ -1,156 +1,331 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
 version: 2
 
+report_sizes: true
+
 project_name: ore
+
+env:
+  - CGO_ENABLED=0
+
+gomod:
+  proxy: true
 
 builds:
   - id: ore
     main: ./cmd/ore
     binary: ore
-    ldflags:
-      - -s -w
-      - -X main.version={{.Version}}
-      - -X main.commit={{.Commit}}
-      - -X main.buildDate={{.Date}}
-    env:
-      - CGO_ENABLED=0
-    mod_timestamp: "{{ .CommitTimestamp }}"
     goos:
       - linux
       - darwin
+      - windows
     goarch:
       - amd64
       - arm64
+      - arm
+    goarm:
+      - "7"
+    goamd64:
+      - v1
+    ignore:
+      - goos: windows
+        goarch: arm
+      - goos: windows
+        goarch: arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.FullCommit}} -X main.buildDate={{.CommitDate}}
+    mod_timestamp: "{{ .CommitTimestamp }}"
 
   - id: ored
     main: ./cmd/ored
     binary: ored
-    ldflags:
-      - -s -w
-      - -X main.version={{.Version}}
-      - -X main.commit={{.Commit}}
-      - -X main.buildDate={{.Date}}
-    env:
-      - CGO_ENABLED=0
-    mod_timestamp: "{{ .CommitTimestamp }}"
     goos:
       - linux
       - darwin
     goarch:
       - amd64
       - arm64
+    goamd64:
+      - v1
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.FullCommit}} -X main.buildDate={{.CommitDate}}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+universal_binaries:
+  - id: ore-universal
+    ids:
+      - ore
+    replace: false
+    name_template: "ore"
 
 archives:
   - id: ore
-    builds:
+    ids:
       - ore
+    builds_info:
+      mode: 0755
+      mtime: "{{ .CommitDate }}"
     formats:
       - tar.gz
     format_overrides:
       - goos: windows
         formats:
           - zip
-    name_template: "ore_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    name_template: >-
+      ore_{{ .Version }}_
+      {{- if eq .Os "windows" }}Windows
+      {{- else if eq .Os "darwin" }}macOS
+      {{- else }}{{ title .Os }}{{ end }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else if eq .Arch "all" }}universal
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
     files:
       - none*
 
   - id: ored
-    builds:
+    ids:
       - ored
+    builds_info:
+      mode: 0755
+      mtime: "{{ .CommitDate }}"
     formats:
       - tar.gz
-    format_overrides:
-      - goos: windows
-        formats:
-          - zip
-    name_template: "ored_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    name_template: >-
+      ored_{{ .Version }}_
+      {{- if eq .Os "darwin" }}macOS
+      {{- else }}{{ title .Os }}{{ end }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "all" }}universal
+      {{- else }}{{ .Arch }}{{ end }}
     files:
       - none*
-
-dockers:
-  - id: ored-amd64
-    ids:
-      - ored
-    goos: linux
-    goarch: amd64
-    dockerfile: Dockerfile.ored
-    image_templates:
-      - "ghcr.io/oreforge/ore/ored:{{ .Version }}-amd64"
-    build_flag_templates:
-      - "--pull"
-      - "--label=org.opencontainers.image.title=ored"
-      - "--label=org.opencontainers.image.description=OreForge daemon for managing game server networks"
-      - "--label=org.opencontainers.image.version={{ .Version }}"
-      - "--label=org.opencontainers.image.source=https://github.com/oreforge/ore"
-      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
-      - "--label=org.opencontainers.image.created={{ .Date }}"
-      - "--platform=linux/amd64"
-
-  - id: ored-arm64
-    ids:
-      - ored
-    goos: linux
-    goarch: arm64
-    dockerfile: Dockerfile.ored
-    image_templates:
-      - "ghcr.io/oreforge/ore/ored:{{ .Version }}-arm64"
-    build_flag_templates:
-      - "--pull"
-      - "--label=org.opencontainers.image.title=ored"
-      - "--label=org.opencontainers.image.description=OreForge daemon for managing game server networks"
-      - "--label=org.opencontainers.image.version={{ .Version }}"
-      - "--label=org.opencontainers.image.source=https://github.com/oreforge/ore"
-      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
-      - "--label=org.opencontainers.image.created={{ .Date }}"
-      - "--platform=linux/arm64"
-
-docker_manifests:
-  - name_template: "ghcr.io/oreforge/ore/ored:{{ .Version }}"
-    image_templates:
-      - "ghcr.io/oreforge/ore/ored:{{ .Version }}-amd64"
-      - "ghcr.io/oreforge/ore/ored:{{ .Version }}-arm64"
-
-  - name_template: "ghcr.io/oreforge/ore/ored:{{ .Major }}.{{ .Minor }}"
-    image_templates:
-      - "ghcr.io/oreforge/ore/ored:{{ .Version }}-amd64"
-      - "ghcr.io/oreforge/ore/ored:{{ .Version }}-arm64"
-
-  - name_template: "ghcr.io/oreforge/ore/ored:latest"
-    image_templates:
-      - "ghcr.io/oreforge/ore/ored:{{ .Version }}-amd64"
-      - "ghcr.io/oreforge/ore/ored:{{ .Version }}-arm64"
 
 checksum:
   name_template: "checksums.txt"
   algorithm: sha256
+  extra_files:
+    - glob: ./LICENSE
+    - glob: ./README.md
+
+source:
+  enabled: true
+
+signs:
+  - id: checksum-sign
+    cmd: cosign
+    certificate: "${artifact}.pem"
+    artifacts: checksum
+    output: true
+    args:
+      - sign-blob
+      - "--output-certificate=${certificate}"
+      - "--output-signature=${signature}"
+      - "${artifact}"
+      - "--yes"
+
+nfpms:
+  - id: ore-nfpm
+    package_name: ore
+    ids:
+      - ore
+    vendor: OreForge
+    homepage: https://github.com/oreforge/ore
+    maintainer: Sebastian Stepper <sebastian-stepper@gmx.de>
+    description: Infrastructure-as-Code CLI for game server networks
+    license: MIT
+    section: devel
+    priority: optional
+    formats:
+      - deb
+      - rpm
+      - apk
+      - archlinux
+    bindir: /usr/bin
+    contents:
+      - src: ./LICENSE
+        dst: /usr/share/doc/ore/LICENSE
+        file_info:
+          mode: 0644
+      - src: ./README.md
+        dst: /usr/share/doc/ore/README.md
+        file_info:
+          mode: 0644
+    overrides:
+      deb:
+        provides:
+          - ore
+        conflicts:
+          - ore-bin
+        replaces:
+          - ore-bin
+      rpm:
+        provides:
+          - ore
+        conflicts:
+          - ore-bin
+        replaces:
+          - ore-bin
+      apk:
+        provides:
+          - ore
+        conflicts:
+          - ore-bin
+        replaces:
+          - ore-bin
+      archlinux:
+        provides:
+          - ore
+        conflicts:
+          - ore-bin
+        replaces:
+          - ore-bin
+
+homebrew_casks:
+  - name: ore
+    ids:
+      - ore
+    repository:
+      owner: oreforge
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.PAT_TOKEN }}"
+    commit_author:
+      name: goreleaserbot
+      email: "[email protected]"
+    commit_msg_template: "chore: update {{ .ProjectName }} to {{ .Tag }}"
+    homepage: "https://github.com/oreforge/ore"
+    description: "Infrastructure-as-Code CLI for game server networks"
+    license: "MIT"
+    directory: Casks
+    url:
+      verified: github.com/oreforge/ore
+    binaries:
+      - ore
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/ore"]
+          end
+
+  - name: "ore@{{ .Major }}.{{ .Minor }}"
+    ids:
+      - ore
+    repository:
+      owner: oreforge
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.PAT_TOKEN }}"
+    commit_author:
+      name: goreleaserbot
+      email: "[email protected]"
+    commit_msg_template: "chore: add {{ .ProjectName }}@{{ .Major }}.{{ .Minor }} ({{ .Tag }})"
+    homepage: "https://github.com/oreforge/ore"
+    description: "Infrastructure-as-Code CLI for game server networks (v{{ .Major }}.{{ .Minor }}.x)"
+    license: "MIT"
+    directory: Casks
+    url:
+      verified: github.com/oreforge/ore
+    binaries:
+      - ore
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/ore"]
+          end
+
+scoops:
+  - name: ore
+    ids:
+      - ore
+    repository:
+      owner: oreforge
+      name: scoop-bucket
+      branch: main
+      token: "{{ .Env.PAT_TOKEN }}"
+    commit_author:
+      name: goreleaserbot
+      email: "[email protected]"
+    commit_msg_template: "chore: update {{ .ProjectName }} to {{ .Tag }}"
+    homepage: "https://github.com/oreforge/ore"
+    description: "Infrastructure-as-Code CLI for game server networks"
+    license: MIT
+    shortcuts:
+      - ["ore.exe", "Ore CLI"]
+
+dockers_v2:
+  - id: ored
+    ids:
+      - ored
+    dockerfile: Dockerfile.ored
+    images:
+      - "ghcr.io/oreforge/ore/ored"
+    tags:
+      - "{{ .Version }}"
+      - "{{ .Major }}.{{ .Minor }}"
+      - latest
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    labels:
+      "org.opencontainers.image.title": "ored"
+      "org.opencontainers.image.description": "OreForge daemon for managing game server networks"
+      "org.opencontainers.image.version": "{{ .Version }}"
+      "org.opencontainers.image.source": "https://github.com/oreforge/ore"
+      "org.opencontainers.image.revision": "{{ .FullCommit }}"
+      "org.opencontainers.image.created": "{{ .Date }}"
 
 release:
   github:
     owner: oreforge
     name: ore
+  mode: append
   name_template: "v{{ .Version }}"
   prerelease: auto
   make_latest: true
 
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
 changelog:
   sort: asc
-  abbrev: -1
+  use: github
+  abbrev: 7
+  format: "* {{ .SHA }} {{ .Message }}{{ if .Logins }} ({{ .Logins | englishJoin }}){{ end }}"
   groups:
-    - title: Features
-      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+    - title: Breaking Changes
+      regexp: '^.*!:'
       order: 0
-    - title: Bug Fixes
-      regexp: '^.*?(fix|bug)(\([[:word:]]+\))??!?:.+$'
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+'
       order: 1
-    - title: Improvements
-      regexp: '^.*?(refactor|perf|improve)(\([[:word:]]+\))??!?:.+$'
+    - title: Bug Fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+'
       order: 2
-    - title: Other
+    - title: Performance
+      regexp: '^.*?perf(\([[:word:]]+\))??!?:.+'
+      order: 3
+    - title: Refactoring
+      regexp: '^.*?refactor(\([[:word:]]+\))??!?:.+'
+      order: 4
+    - title: Other Changes
+      regexp: '^.*?(style|revert)(\([[:word:]]+\))??!?:.+'
       order: 999
   filters:
     exclude:
+      - '^.*?chore(\([[:word:]]+\))??!?:.+'
       - "^docs:"
       - "^test:"
       - "^ci:"
-      - "^chore:"
-      - "^style:"
       - "^Merge"
+      - "^merge"
+
+metadata:
+  mod_timestamp: "{{ .CommitTimestamp }}"

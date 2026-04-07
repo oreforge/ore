@@ -1,8 +1,10 @@
 FROM alpine:3.21
 
+ARG TARGETPLATFORM
+
 RUN apk add --no-cache ca-certificates tzdata
 
-COPY ored /usr/local/bin/ored
+COPY ${TARGETPLATFORM}/ored /usr/local/bin/ored
 
 ENV ORED_ADDR=":9090"
 ENV ORED_PROJECTS="/var/lib/ored/projects"

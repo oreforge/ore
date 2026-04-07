@@ -55,16 +55,7 @@ func newBuildEnv(ctx context.Context, specPath string, opts build.Options) (*bui
 }
 
 func (be *buildEnv) buildAll(ctx context.Context) (map[string]build.Result, error) {
-	images, err := be.builder.BuildAll(ctx, be.spec, be.repoRoot)
-	if err != nil {
-		return nil, err
-	}
-
-	for name, res := range images {
-		logger.Info("built image", "server", name, "tag", res.ImageTag)
-	}
-
-	return images, nil
+	return be.builder.BuildAll(ctx, be.spec, be.repoRoot)
 }
 
 func newBuildCmd() *cobra.Command {

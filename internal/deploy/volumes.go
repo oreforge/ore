@@ -39,7 +39,7 @@ func EnsureServiceVolumes(ctx context.Context, client docker.Client, svc *spec.S
 func removeVolumes(ctx context.Context, client docker.Client, containerName, networkName string, vols []spec.Volume, logger *slog.Logger) error {
 	for _, vol := range vols {
 		name := volumeName(networkName, containerName, vol.Name)
-		logger.Info("removing volume", "volume", name)
+		logger.Debug("removing volume", "volume", name)
 		if err := client.VolumeRemove(ctx, name, true); err != nil {
 			return fmt.Errorf("removing volume %s: %w", name, err)
 		}
