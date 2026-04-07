@@ -90,6 +90,7 @@ Deploy ored and the dashboard together using Docker Compose. Create a `docker-co
 services:
   ored:
     image: ghcr.io/oreforge/ore/ored:latest
+    pull_policy: always
     restart: unless-stopped
     ports:
       - "9090:9090"
@@ -102,6 +103,7 @@ services:
 
   dashboard:
     image: ghcr.io/oreforge/ore-dashboard:latest
+    pull_policy: always
     restart: unless-stopped
     ports:
       - "3000:3000"
