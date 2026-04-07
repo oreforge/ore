@@ -2,7 +2,7 @@ FROM alpine:3.23
 
 ARG TARGETPLATFORM
 
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata git
 
 COPY ${TARGETPLATFORM}/ored /usr/local/bin/ored
 
