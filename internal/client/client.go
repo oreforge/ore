@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -42,12 +43,27 @@ func New(addr, token, project string) (*Client, error) {
 		wsScheme:   wsScheme,
 		client: &http.Client{
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if len(via) >= 10 {
+					return fmt.Errorf("too many redirects")
+				}
 				if len(via) > 0 {
-					req.Method = via[0].Method
-					req.Body = via[0].Body
-					req.GetBody = via[0].GetBody
-					req.ContentLength = via[0].ContentLength
-					for k, v := range via[0].Header {
+					prev := via[0]
+					slog.Debug("following redirect",
+						"from", prev.URL.String(),
+						"to", req.URL.String(),
+						"method", prev.Method,
+					)
+					req.Method = prev.Method
+					req.ContentLength = prev.ContentLength
+					req.GetBody = prev.GetBody
+					if prev.GetBody != nil {
+						body, err := prev.GetBody()
+						if err != nil {
+							return err
+						}
+						req.Body = body
+					}
+					for k, v := range prev.Header {
 						req.Header[k] = v
 					}
 				}
@@ -164,9 +180,16 @@ func (c *Client) newRequest(ctx context.Context, method, path string, body []byt
 		bodyReader = bytes.NewReader(body)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, c.httpScheme+"://"+c.addr+path, bodyReader)
+	u := c.httpScheme + "://" + c.addr + path
+	req, err := http.NewRequestWithContext(ctx, method, u, bodyReader)
 	if err != nil {
 		return nil, err
+	}
+
+	if body != nil {
+		req.GetBody = func() (io.ReadCloser, error) {
+			return io.NopCloser(bytes.NewReader(body)), nil
+		}
 	}
 
 	if c.token != "" {
@@ -175,6 +198,8 @@ func (c *Client) newRequest(ctx context.Context, method, path string, body []byt
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+
+	slog.Debug("http request", "method", method, "url", u)
 	return req, nil
 }
 
@@ -198,11 +223,18 @@ func (c *Client) streamRequest(ctx context.Context, method, path string, body []
 }
 
 func (c *Client) readError(resp *http.Response) error {
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+
+	slog.Debug("http error response",
+		"status", resp.StatusCode,
+		"url", resp.Request.URL.String(),
+		"body", string(body),
+	)
+
 	var errResp struct {
 		Detail string `json:"detail"`
 	}
-	_ = json.NewDecoder(resp.Body).Decode(&errResp)
-	if errResp.Detail != "" {
+	if json.Unmarshal(body, &errResp) == nil && errResp.Detail != "" {
 		return fmt.Errorf("ored: %s (HTTP %d)", errResp.Detail, resp.StatusCode)
 	}
 	return fmt.Errorf("ored: unexpected status %d", resp.StatusCode)

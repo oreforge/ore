@@ -15,6 +15,7 @@ func streamOperation(w http.ResponseWriter, logLevel slog.Level, serverLogger *s
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no")
 
 	flusher, _ := w.(http.Flusher)
 
