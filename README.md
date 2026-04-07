@@ -69,6 +69,7 @@ Download from [Releases](https://github.com/oreforge/ore/releases).
 docker run -d \
   -p 9090:9090 \
   -v ored-data:/var/lib/ored \
+  -v /var/run/docker.sock:/var/run/docker.sock \
   ghcr.io/oreforge/ore/ored:latest
 ```
 
