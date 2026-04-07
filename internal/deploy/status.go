@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/docker/docker/api/types/container"
 
 	cerrdefs "github.com/containerd/errdefs"
 
@@ -34,8 +37,23 @@ type ContainerStatus struct {
 	Uptime       time.Duration  `json:"uptime,omitempty" doc:"Time since started"`
 	RestartCount int            `json:"restart_count" doc:"Number of restarts"`
 	ExitCode     int            `json:"exit_code" doc:"Last exit code"`
-	Memory       int64          `json:"memory_bytes" doc:"Memory limit in bytes"`
-	CPUs         float64        `json:"cpus" doc:"CPU limit"`
+	Resources    ResourceStatus `json:"resources" doc:"Resource limits and usage"`
+}
+
+type ResourceStatus struct {
+	Memory MemoryStatus `json:"memory" doc:"Memory limits and usage"`
+	CPU    CPUStatus    `json:"cpu" doc:"CPU limits and usage"`
+}
+
+type MemoryStatus struct {
+	UsedBytes  uint64  `json:"used_bytes" doc:"Current memory usage in bytes"`
+	LimitBytes int64   `json:"limit_bytes" doc:"Memory limit in bytes (0 = unlimited)"`
+	Percent    float64 `json:"percent" doc:"Usage as percentage of limit (0 if unlimited)"`
+}
+
+type CPUStatus struct {
+	Limit   float64 `json:"limit" doc:"CPU core limit (0 = unlimited)"`
+	Percent float64 `json:"percent" doc:"Current CPU usage percentage"`
 }
 
 type ContainerState int
@@ -229,8 +247,8 @@ func (d *Deployer) inspectContainer(ctx context.Context, name string) ContainerS
 	}
 
 	if info.HostConfig != nil {
-		cs.Memory = info.HostConfig.Memory
-		cs.CPUs = float64(info.HostConfig.NanoCPUs) / 1e9
+		cs.Resources.Memory.LimitBytes = info.HostConfig.Memory
+		cs.Resources.CPU.Limit = float64(info.HostConfig.NanoCPUs) / 1e9
 
 		for port, bindings := range info.HostConfig.PortBindings {
 			containerPort, _ := strconv.Atoi(strings.Split(string(port), "/")[0])
@@ -249,5 +267,33 @@ func (d *Deployer) inspectContainer(ctx context.Context, name string) ContainerS
 		}
 	}
 
+	if cs.State == StateRunning {
+		d.fillRuntimeStats(ctx, name, &cs)
+	}
+
 	return cs
+}
+
+func (d *Deployer) fillRuntimeStats(ctx context.Context, name string, cs *ContainerStatus) {
+	statsReader, err := d.docker.ContainerStatsOneShot(ctx, name)
+	if err != nil {
+		return
+	}
+	defer func() { _ = statsReader.Body.Close() }()
+
+	var stats container.StatsResponse
+	if err := json.NewDecoder(statsReader.Body).Decode(&stats); err != nil {
+		return
+	}
+
+	cs.Resources.Memory.UsedBytes = stats.MemoryStats.Usage
+	if cs.Resources.Memory.LimitBytes > 0 {
+		cs.Resources.Memory.Percent = math.Round(float64(stats.MemoryStats.Usage)/float64(cs.Resources.Memory.LimitBytes)*1000) / 10
+	}
+
+	cpuDelta := float64(stats.CPUStats.CPUUsage.TotalUsage - stats.PreCPUStats.CPUUsage.TotalUsage)
+	systemDelta := float64(stats.CPUStats.SystemUsage - stats.PreCPUStats.SystemUsage)
+	if systemDelta > 0 && stats.CPUStats.OnlineCPUs > 0 {
+		cs.Resources.CPU.Percent = math.Round(cpuDelta/systemDelta*float64(stats.CPUStats.OnlineCPUs)*1000) / 10
+	}
 }
