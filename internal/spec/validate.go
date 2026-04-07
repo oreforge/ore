@@ -94,6 +94,16 @@ func Validate(s *Network) error {
 		}
 	}
 
+	ResolveDependencyConditions(s)
+
+	if err := validateDependencies(s); err != nil {
+		return err
+	}
+
+	if err := validateNoCycles(s); err != nil {
+		return err
+	}
+
 	return nil
 }
 

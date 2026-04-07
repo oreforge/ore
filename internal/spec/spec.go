@@ -40,6 +40,7 @@ type Server struct {
 	Env         map[string]string `yaml:"env,omitempty"`
 	Volumes     []Volume          `yaml:"volumes,omitempty"`
 	HealthCheck *HealthCheck      `yaml:"healthcheck,omitempty"`
+	DependsOn   []Dependency      `yaml:"depends_on,omitempty"`
 }
 
 type Service struct {
@@ -49,6 +50,19 @@ type Service struct {
 	Env         map[string]string `yaml:"env,omitempty"`
 	Volumes     []Volume          `yaml:"volumes,omitempty"`
 	HealthCheck *HealthCheck      `yaml:"healthcheck,omitempty"`
+	DependsOn   []Dependency      `yaml:"depends_on,omitempty"`
+}
+
+type DependencyCondition string
+
+const (
+	ConditionStarted DependencyCondition = "started"
+	ConditionHealthy DependencyCondition = "healthy"
+)
+
+type Dependency struct {
+	Name      string              `yaml:"name"`
+	Condition DependencyCondition `yaml:"condition,omitempty"`
 }
 
 type HealthCheck struct {

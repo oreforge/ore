@@ -69,152 +69,164 @@ func (d *Deployer) Up(ctx context.Context, cfg *spec.Network, images map[string]
 
 	newState := NewDeployState()
 
-	type serviceResult struct {
-		name       string
-		image      string
-		configHash string
+	serviceByName := make(map[string]*spec.Service, len(cfg.Services))
+	for i := range cfg.Services {
+		serviceByName[cfg.Services[i].Name] = &cfg.Services[i]
+	}
+	serverByName := make(map[string]*spec.Server, len(cfg.Servers))
+	for i := range cfg.Servers {
+		serverByName[cfg.Servers[i].Name] = &cfg.Servers[i]
 	}
 
-	var svcMu sync.Mutex
-	var svcResults []serviceResult
-
-	svcG, svcCtx := errgroup.WithContext(ctx)
+	ready := make(map[string]chan struct{}, len(cfg.Servers)+len(cfg.Services))
+	for _, srv := range cfg.Servers {
+		ready[srv.Name] = make(chan struct{})
+	}
 	for _, svc := range cfg.Services {
-		svcG.Go(func() error {
-			configHash := spec.ServiceHash(&svc)
-			name := ServiceContainerName(&svc)
-
-			prev := opts.prevService(svc.Name)
-			if d.unchanged(svcCtx, name, svc.Image, prev.Image, configHash, prev.ConfigHash, opts) {
-				d.logger.Debug("service unchanged, skipping", "service", name)
-				svcMu.Lock()
-				svcResults = append(svcResults, serviceResult{svc.Name, svc.Image, configHash})
-				svcMu.Unlock()
-				return nil
-			}
-
-			if err := EnsureImage(svcCtx, d.docker, svc.Image, d.logger); err != nil {
-				return fmt.Errorf("pulling image for %s: %w", svc.Name, err)
-			}
-
-			if err := EnsureServiceVolumes(svcCtx, d.docker, &svc, cfg.Network, d.logger); err != nil {
-				return fmt.Errorf("ensuring volumes for %s: %w", svc.Name, err)
-			}
-
-			svcHC := resolveServiceHealthCheck(svc.HealthCheck)
-
-			if err := StartServiceContainer(svcCtx, d.docker, &svc, name, cfg.Network, svcHC, d.logger); err != nil {
-				return fmt.Errorf("starting %s: %w", name, err)
-			}
-
-			if err := WaitForRunning(svcCtx, d.docker, name, 10*time.Second); err != nil {
-				return fmt.Errorf("service %s failed to start: %w", name, err)
-			}
-
-			if hcTimeout := svcHC.WaitTimeout(); hcTimeout > 0 {
-				if err := WaitForHealthy(svcCtx, d.docker, name, hcTimeout, d.logger); err != nil {
-					d.logger.Warn("service health check failed", "service", name, "error", err)
-				}
-			}
-
-			svcMu.Lock()
-			svcResults = append(svcResults, serviceResult{svc.Name, svc.Image, configHash})
-			svcMu.Unlock()
-			return nil
-		})
-	}
-
-	if err := svcG.Wait(); err != nil {
-		return nil, err
-	}
-
-	for _, r := range svcResults {
-		newState.Services[r.name] = ServiceState{
-			Image:      r.image,
-			ConfigHash: r.configHash,
-		}
-	}
-
-	type serverResult struct {
-		name       string
-		imageTag   string
-		configHash string
+		ready[svc.Name] = make(chan struct{})
 	}
 
 	var mu sync.Mutex
-	var serverResults []serverResult
 
-	g, gCtx := errgroup.WithContext(ctx)
-	for _, srv := range cfg.Servers {
-		var res build.Result
-		if images != nil {
-			var ok bool
-			res, ok = images[srv.Name]
-			if !ok {
-				return nil, fmt.Errorf("no image found for server %s", srv.Name)
-			}
+	groups := spec.TopologicalOrder(cfg)
+
+	for _, group := range groups {
+		g, gCtx := errgroup.WithContext(ctx)
+
+		for _, svcName := range group.Services {
+			svc := serviceByName[svcName]
+			g.Go(func() error {
+				if err := waitForDeps(gCtx, svc.DependsOn, ready); err != nil {
+					return fmt.Errorf("service %s: dependency wait: %w", svc.Name, err)
+				}
+
+				configHash := spec.ServiceHash(svc)
+				name := ServiceContainerName(svc)
+
+				prev := opts.prevService(svc.Name)
+				if d.unchanged(gCtx, name, svc.Image, prev.Image, configHash, prev.ConfigHash, opts) {
+					d.logger.Debug("service unchanged, skipping", "service", name)
+					mu.Lock()
+					newState.Services[svc.Name] = ServiceState{Image: svc.Image, ConfigHash: configHash}
+					mu.Unlock()
+					close(ready[svc.Name])
+					return nil
+				}
+
+				if err := EnsureImage(gCtx, d.docker, svc.Image, d.logger); err != nil {
+					return fmt.Errorf("pulling image for %s: %w", svc.Name, err)
+				}
+
+				if err := EnsureServiceVolumes(gCtx, d.docker, svc, cfg.Network, d.logger); err != nil {
+					return fmt.Errorf("ensuring volumes for %s: %w", svc.Name, err)
+				}
+
+				svcHC := resolveServiceHealthCheck(svc.HealthCheck)
+
+				if err := StartServiceContainer(gCtx, d.docker, svc, name, cfg.Network, svcHC, d.logger); err != nil {
+					return fmt.Errorf("starting %s: %w", name, err)
+				}
+
+				if err := WaitForRunning(gCtx, d.docker, name, 10*time.Second); err != nil {
+					return fmt.Errorf("service %s failed to start: %w", name, err)
+				}
+
+				if hcTimeout := svcHC.WaitTimeout(); hcTimeout > 0 {
+					if err := WaitForHealthy(gCtx, d.docker, name, hcTimeout, d.logger); err != nil {
+						d.logger.Warn("service health check failed", "service", name, "error", err)
+					}
+				}
+
+				mu.Lock()
+				newState.Services[svc.Name] = ServiceState{Image: svc.Image, ConfigHash: configHash}
+				mu.Unlock()
+				close(ready[svc.Name])
+				return nil
+			})
 		}
 
-		tag := res.ImageTag
-		if tag == "" {
-			return nil, fmt.Errorf("no image tag for server %s", srv.Name)
+		for _, srvName := range group.Servers {
+			srv := serverByName[srvName]
+			g.Go(func() error {
+				if err := waitForDeps(gCtx, srv.DependsOn, ready); err != nil {
+					return fmt.Errorf("server %s: dependency wait: %w", srv.Name, err)
+				}
+
+				var res build.Result
+				if images != nil {
+					var ok bool
+					res, ok = images[srv.Name]
+					if !ok {
+						return fmt.Errorf("no image found for server %s", srv.Name)
+					}
+				}
+
+				tag := res.ImageTag
+				if tag == "" {
+					return fmt.Errorf("no image tag for server %s", srv.Name)
+				}
+
+				configHash := spec.ServerHash(srv, tag)
+				name := ContainerName(srv)
+
+				prev := opts.prevServer(srv.Name)
+				if d.unchanged(gCtx, name, tag, prev.ImageTag, configHash, prev.ConfigHash, opts) {
+					d.logger.Debug("server unchanged, skipping", "server", name)
+					mu.Lock()
+					newState.Servers[srv.Name] = ServerState{ImageTag: tag, ConfigHash: configHash}
+					mu.Unlock()
+					close(ready[srv.Name])
+					return nil
+				}
+
+				healthTimeout := res.HealthTimeout
+				if healthTimeout == 0 {
+					healthTimeout = 3 * time.Minute
+				}
+
+				if err := EnsureVolumes(gCtx, d.docker, srv, cfg.Network, d.logger); err != nil {
+					return fmt.Errorf("ensuring volumes for %s: %w", srv.Name, err)
+				}
+
+				dataBind := d.resolveDataBind(tag, srv.Name)
+
+				if err := StartContainer(gCtx, d.docker, srv, name, tag, cfg.Network, dataBind, d.logger); err != nil {
+					return fmt.Errorf("starting %s: %w", name, err)
+				}
+
+				if err := WaitForRunning(gCtx, d.docker, name, 10*time.Second); err != nil {
+					return fmt.Errorf("container %s failed to start: %w", name, err)
+				}
+
+				if err := WaitForHealthy(gCtx, d.docker, name, healthTimeout, d.logger); err != nil {
+					d.logger.Warn("health check failed", "container", name, "error", err)
+				}
+
+				mu.Lock()
+				newState.Servers[srv.Name] = ServerState{ImageTag: tag, ConfigHash: configHash}
+				mu.Unlock()
+				close(ready[srv.Name])
+				return nil
+			})
 		}
 
-		configHash := spec.ServerHash(&srv, tag)
-		name := ContainerName(&srv)
-
-		prev := opts.prevServer(srv.Name)
-		if d.unchanged(ctx, name, tag, prev.ImageTag, configHash, prev.ConfigHash, opts) {
-			d.logger.Debug("server unchanged, skipping", "server", name)
-			mu.Lock()
-			serverResults = append(serverResults, serverResult{srv.Name, tag, configHash})
-			mu.Unlock()
-			continue
-		}
-
-		healthTimeout := res.HealthTimeout
-		if healthTimeout == 0 {
-			healthTimeout = 3 * time.Minute
-		}
-
-		g.Go(func() error {
-			if err := EnsureVolumes(gCtx, d.docker, &srv, cfg.Network, d.logger); err != nil {
-				return fmt.Errorf("ensuring volumes for %s: %w", srv.Name, err)
-			}
-
-			dataBind := d.resolveDataBind(tag, srv.Name)
-
-			if err := StartContainer(gCtx, d.docker, &srv, name, tag, cfg.Network, dataBind, d.logger); err != nil {
-				return fmt.Errorf("starting %s: %w", name, err)
-			}
-
-			if err := WaitForRunning(gCtx, d.docker, name, 10*time.Second); err != nil {
-				return fmt.Errorf("container %s failed to start: %w", name, err)
-			}
-
-			if err := WaitForHealthy(gCtx, d.docker, name, healthTimeout, d.logger); err != nil {
-				d.logger.Warn("health check failed", "container", name, "error", err)
-			}
-
-			mu.Lock()
-			serverResults = append(serverResults, serverResult{srv.Name, tag, configHash})
-			mu.Unlock()
-			return nil
-		})
-	}
-
-	if err := g.Wait(); err != nil {
-		return nil, err
-	}
-
-	for _, r := range serverResults {
-		newState.Servers[r.name] = ServerState{
-			ImageTag:   r.imageTag,
-			ConfigHash: r.configHash,
+		if err := g.Wait(); err != nil {
+			return nil, err
 		}
 	}
 
 	return newState, nil
+}
+
+func waitForDeps(ctx context.Context, deps []spec.Dependency, ready map[string]chan struct{}) error {
+	for _, dep := range deps {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ready[dep.Name]:
+		}
+	}
+	return nil
 }
 
 func (d *Deployer) unchanged(ctx context.Context, containerName, expectedImage, prevImage, configHash, prevConfigHash string, opts UpOptions) bool {
