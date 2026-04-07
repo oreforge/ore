@@ -13,16 +13,16 @@ import (
 func newNodesCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "nodes",
-		Short: "Manage remote node connections",
+		Short: "Manage remote nodes",
 	}
 
 	cmd.AddCommand(
 		newNodesListCmd(),
 		newNodesAddCmd(),
-		newNodesRemoveCmd(),
-		newNodesUseCmd(),
-		newNodesActiveCmd(),
 		newNodesShowCmd(),
+		newNodesUseCmd(),
+		newNodesRemoveCmd(),
+		newNodesActiveCmd(),
 	)
 
 	return cmd
@@ -32,6 +32,7 @@ func newNodesListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:         "list",
 		Short:       "List configured nodes",
+		Example:     "ore nodes list",
 		Annotations: map[string]string{"skip-engine": "true"},
 		RunE: func(_ *cobra.Command, _ []string) error {
 			if len(cfg.Nodes) == 0 {
@@ -54,7 +55,7 @@ func newNodesListCmd() *cobra.Command {
 func newNodesAddCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:         "add <name>",
-		Short:       "Add or update a remote node",
+		Short:       "Add a remote node",
 		Example:     "ore nodes add mynode --addr 192.168.1.10:9090 --token mytoken",
 		Args:        cobra.ExactArgs(1),
 		Annotations: map[string]string{"skip-engine": "true"},
@@ -62,6 +63,14 @@ func newNodesAddCmd() *cobra.Command {
 			addr, _ := cmd.Flags().GetString("addr")
 			token, _ := cmd.Flags().GetString("token")
 			project, _ := cmd.Flags().GetString("project")
+
+			_, exists := cfg.Nodes[args[0]]
+			if exists {
+				force, _ := cmd.Flags().GetBool("force")
+				if !force {
+					return fmt.Errorf("node %q already exists (use --force to overwrite)", args[0])
+				}
+			}
 
 			if err := config.SaveNode(args[0], config.NodeConfig{
 				Addr:    addr,
@@ -71,7 +80,11 @@ func newNodesAddCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Printf("added node %q\n", args[0])
+			if exists {
+				fmt.Printf("updated node %q\n", args[0])
+			} else {
+				fmt.Printf("added node %q\n", args[0])
+			}
 			return nil
 		},
 	}
@@ -79,6 +92,7 @@ func newNodesAddCmd() *cobra.Command {
 	cmd.Flags().String("addr", "", "node address (host:port)")
 	cmd.Flags().String("token", "", "authentication token")
 	cmd.Flags().String("project", "", "default project (optional)")
+	cmd.Flags().Bool("force", false, "overwrite an existing node")
 
 	_ = cmd.MarkFlagRequired("addr")
 	_ = cmd.MarkFlagRequired("token")
@@ -89,7 +103,7 @@ func newNodesAddCmd() *cobra.Command {
 func newNodesRemoveCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:         "remove <name>",
-		Short:       "Remove a node",
+		Short:       "Remove a configured node",
 		Args:        cobra.ExactArgs(1),
 		Annotations: map[string]string{"skip-engine": "true"},
 		RunE: func(_ *cobra.Command, args []string) error {
@@ -107,6 +121,7 @@ func newNodesUseCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:         "use <name>",
 		Short:       "Set the active node",
+		Example:     "ore nodes use prod",
 		Args:        cobra.ExactArgs(1),
 		Annotations: map[string]string{"skip-engine": "true"},
 		RunE: func(_ *cobra.Command, args []string) error {
@@ -144,6 +159,7 @@ func newNodesShowCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:         "show <name>",
 		Short:       "Show node details",
+		Example:     "ore nodes show prod",
 		Args:        cobra.ExactArgs(1),
 		Annotations: map[string]string{"skip-engine": "true"},
 		RunE: func(_ *cobra.Command, args []string) error {
@@ -153,7 +169,7 @@ func newNodesShowCmd() *cobra.Command {
 			}
 
 			fmt.Printf("Name:    %s\n", args[0])
-			fmt.Printf("Addr:    %s\n", node.Addr)
+			fmt.Printf("Address: %s\n", node.Addr)
 			fmt.Printf("Token:   %s\n", maskToken(node.Token))
 			if node.Project != "" {
 				fmt.Printf("Project: %s\n", node.Project)

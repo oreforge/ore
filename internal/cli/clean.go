@@ -21,11 +21,11 @@ func newCleanCmd() *cobra.Command {
 
 	cmd.AddCommand(
 		newCleanAllCmd(),
-		newCleanCacheCmd(),
-		newCleanBuildsCmd(),
 		newCleanServersCmd(),
 		newCleanImagesCmd(),
 		newCleanDataCmd(),
+		newCleanCacheCmd(),
+		newCleanBuildsCmd(),
 	)
 
 	return cmd
@@ -33,9 +33,10 @@ func newCleanCmd() *cobra.Command {
 
 func newCleanAllCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "all",
-		Short: "Remove all servers, images, data, and build cache",
-		Args:  cobra.NoArgs,
+		Use:     "all",
+		Short:   "Remove all servers, images, data, and build cache",
+		Example: "ore clean all",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if localMode {
 				return pruneLocal(cmd, project.PruneAll)
@@ -103,9 +104,10 @@ func newCleanImagesCmd() *cobra.Command {
 
 func newCleanDataCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "data",
-		Short: "Remove server data volumes",
-		Args:  cobra.NoArgs,
+		Use:     "data",
+		Short:   "Permanently remove server data volumes",
+		Example: "ore clean data",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if localMode {
 				return pruneLocal(cmd, project.PruneVolumes)

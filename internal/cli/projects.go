@@ -18,9 +18,9 @@ func newProjectsCmd() *cobra.Command {
 	cmd.AddCommand(
 		newProjectsListCmd(),
 		newProjectsAddCmd(),
-		newProjectsRemoveCmd(),
-		newProjectsUpdateCmd(),
 		newProjectsUseCmd(),
+		newProjectsUpdateCmd(),
+		newProjectsRemoveCmd(),
 		newProjectsActiveCmd(),
 		newProjectsWebhookCmd(),
 	)
@@ -37,8 +37,9 @@ func requireRemote() (*client.Client, error) {
 
 func newProjectsListCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "list",
-		Short: "List available projects",
+		Use:     "list",
+		Short:   "List remote projects",
+		Example: "ore projects list",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			r, err := requireRemote()
 			if err != nil {
@@ -115,9 +116,10 @@ func newProjectsRemoveCmd() *cobra.Command {
 
 func newProjectsUpdateCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "update <name>",
-		Short: "Pull latest changes from git",
-		Args:  cobra.ExactArgs(1),
+		Use:     "update <name>",
+		Short:   "Pull latest changes and redeploy",
+		Example: "ore projects update my-network",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r, err := requireRemote()
 			if err != nil {
@@ -136,11 +138,32 @@ func newProjectsUpdateCmd() *cobra.Command {
 
 func newProjectsUseCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:         "use <name>",
-		Short:       "Set the active project",
-		Args:        cobra.ExactArgs(1),
-		Annotations: map[string]string{"skip-engine": "true"},
-		RunE: func(_ *cobra.Command, args []string) error {
+		Use:     "use <name>",
+		Short:   "Set the active project",
+		Example: "ore projects use my-network",
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			r, err := requireRemote()
+			if err != nil {
+				return err
+			}
+
+			projects, err := r.ListProjects(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			found := false
+			for _, p := range projects {
+				if p == args[0] {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return fmt.Errorf("project %q not found on remote node", args[0])
+			}
+
 			if err := config.SetProject(args[0]); err != nil {
 				return err
 			}
@@ -152,9 +175,10 @@ func newProjectsUseCmd() *cobra.Command {
 
 func newProjectsWebhookCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "webhook <name>",
-		Short: "Show webhook URL for a project",
-		Args:  cobra.ExactArgs(1),
+		Use:     "webhook <name>",
+		Short:   "Show the webhook URL for a project",
+		Example: "ore projects webhook my-network",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r, err := requireRemote()
 			if err != nil {
@@ -183,13 +207,13 @@ func newProjectsWebhookCmd() *cobra.Command {
 			}
 
 			addr, _, _, _ := config.ResolveRemote(cfg)
-			fmt.Printf("http://%s%s\n", addr, webhookURL)
+			fmt.Printf("%s%s\n", addr, webhookURL)
 			return nil
 		},
 	}
 
-	cmd.Flags().Bool("no-cache", false, "skip local binary cache and re-download everything")
-	cmd.Flags().Bool("force", false, "force restart all servers even if unchanged")
+	cmd.Flags().Bool("no-cache", false, "include no_cache=true parameter in the URL")
+	cmd.Flags().Bool("force", false, "include force=true parameter in the URL")
 
 	return cmd
 }

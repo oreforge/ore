@@ -71,7 +71,9 @@ func newBuildCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "build",
 		Short: "Build all server images",
-		Args:  cobra.NoArgs,
+		Example: `ore build
+ore build --no-cache`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			noCache, _ := cmd.Flags().GetBool("no-cache")
 			if localMode {

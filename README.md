@@ -58,7 +58,7 @@ services:
 
 ```sh
 ore up             # build and start all servers
-ore status         # show server status
+ore status         # show server and service status
 ore console lobby  # attach to server console (ctrl+c to detach)
 ore down           # stop and remove all servers
 ```
@@ -66,30 +66,31 @@ ore down           # stop and remove all servers
 ## Commands
 
 ```
-ore up [--no-cache] [--force]  Build and start all servers
-ore down                      Stop and remove all servers
-ore build [--no-cache]        Build all server images
-ore status                    Show server status
-ore console <server>          Attach to a server console
-ore clean all                 Remove all servers, images, data, and build cache
-ore clean cache               Remove cached binaries
-ore clean builds              Remove build artifacts
-ore clean servers             Stop and remove all running servers
-ore clean images              Remove unused server images
-ore clean data                Remove server data volumes
-ore nodes list                List configured nodes
-ore nodes add <name>          Add a remote node (--addr, --token required, --project optional)
-ore nodes remove <name>       Remove a remote node
-ore nodes use <name>          Set the active node
-ore nodes active              Show the active node
-ore nodes show <name>         Show node details
-ore projects list             List remote projects
-ore projects add <url>        Clone a project from a git repository
-ore projects remove <name>    Remove a project
-ore projects update <name>    Pull latest changes and redeploy
-ore projects use <name>       Set the active project
-ore projects active           Show the active project
-ore version                   Print version info
+ore up [--no-cache] [--force]       Build and start all servers
+ore down                            Stop and remove all servers
+ore status                          Show server and service status
+ore build [--no-cache]              Build all server images
+ore console <server>                Attach to a running server console
+ore clean all                       Remove all servers, images, data, and build cache
+ore clean servers                   Stop and remove all running servers
+ore clean images                    Remove unused server images
+ore clean data                      Permanently remove server data volumes
+ore clean cache                     Remove cached binaries
+ore clean builds                    Remove build artifacts
+ore nodes list                      List configured nodes
+ore nodes add <name>                Add a remote node (--addr, --token required; --project, --force optional)
+ore nodes show <name>               Show node details
+ore nodes use <name>                Set the active node
+ore nodes remove <name>             Remove a configured node
+ore nodes active                    Show the active node
+ore projects list                   List remote projects
+ore projects add <url>              Clone a project from a git repository (--name optional)
+ore projects use <name>             Set the active project
+ore projects update <name>          Pull latest changes and redeploy
+ore projects remove <name>          Stop servers and remove a project
+ore projects active                 Show the active project
+ore projects webhook <name>         Show the webhook URL for a project (--force, --no-cache optional)
+ore version                         Print the ore version
 ```
 
 Global flags: `-f <path>` spec file (default `ore.yaml`), `-v` verbose logging.
@@ -103,6 +104,10 @@ gitops:                     # GitOps configuration (optional)
   poll:
     enabled: bool           # enable periodic git polling (default: false)
     interval: duration      # poll interval, e.g. 5m, 1h (default: 5m)
+  webhook:
+    enabled: bool           # enable webhook endpoint (default: false)
+    force: bool             # default force restart on webhook trigger (default: false)
+    noCache: bool           # default no-cache on webhook trigger (default: false)
 
 servers:
   - name: string            # server name
@@ -195,7 +200,9 @@ Multiple nodes can be configured and switched between. Each node remembers its a
 
 ## GitOps
 
-ore supports automatic deployments via polling, configured per project in `ore.yaml`.
+ore supports automatic deployments via polling and webhooks, configured per project in `ore.yaml`.
+
+### Polling
 
 Enable polling to have ored periodically check for new commits:
 
@@ -210,6 +217,38 @@ servers:
 ```
 
 On startup, ored scans all projects and starts a polling goroutine for each project with polling enabled. When new commits are detected, it pulls and redeploys automatically.
+
+### Webhooks
+
+Enable webhooks to trigger deployments via HTTP POST from CI/CD systems (GitHub Actions, GitLab CI, etc.):
+
+```yaml
+network: mynetwork
+gitops:
+  webhook:
+    enabled: true
+    force: false
+    noCache: false
+servers:
+  - ...
+```
+
+Get the webhook URL for a project:
+
+```sh
+ore projects webhook mynetwork
+```
+
+This prints the full URL including the HMAC-derived secret. The secret is computed as `HMAC-SHA256(ored_token, project_name)` so it never needs to be stored separately.
+
+The webhook endpoint accepts optional query parameters `force=true` and `no_cache=true` to override the spec defaults. Use the `--force` and `--no-cache` flags on the webhook command to include them in the URL.
+
+Example GitHub Actions step:
+
+```yaml
+- name: Deploy
+  run: curl -X POST "${{ secrets.ORE_WEBHOOK_URL }}"
+```
 
 ## Configuration
 

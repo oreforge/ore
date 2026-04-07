@@ -16,9 +16,10 @@ import (
 
 func newStatusCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "status",
-		Short: "Show the status of all servers in the network",
-		Args:  cobra.NoArgs,
+		Use:     "status",
+		Short:   "Show server and service status",
+		Example: "ore status",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var (
 				status *deploy.NetworkStatus
@@ -56,7 +57,7 @@ func printTable(status *deploy.NetworkStatus) error {
 	fmt.Printf("Network: %s\n\n", status.Network)
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	_, _ = fmt.Fprintln(w, "SERVER\tSTATUS\tHEALTH\tIMAGE\tPORTS\tUPTIME\tRESTARTS")
+	_, _ = fmt.Fprintln(w, "NAME\tSTATUS\tHEALTH\tIMAGE\tPORTS\tUPTIME\tRESTARTS")
 
 	for _, srv := range status.Servers {
 		c := srv.Container

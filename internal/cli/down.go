@@ -12,9 +12,10 @@ import (
 
 func newDownCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "down",
-		Short: "Stop and remove all servers",
-		Args:  cobra.NoArgs,
+		Use:     "down",
+		Short:   "Stop and remove all servers",
+		Example: "ore down",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if localMode {
 				s, err := spec.Load(specPath)
