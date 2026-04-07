@@ -49,6 +49,7 @@ type Builder struct {
 	workDir   *WorkDir
 	opts      Options
 	fetchOnce singleflight.Group
+	pullOnce  singleflight.Group
 }
 
 func NewBuilder(dockerClient docker.Client, resolver *software.Resolver, logger *slog.Logger, workDir *WorkDir, opts Options) *Builder {
@@ -144,6 +145,12 @@ func (b *Builder) Build(ctx context.Context, srv *spec.Server, repoRoot string) 
 	}
 	if cleanup != nil {
 		defer cleanup()
+	}
+
+	if _, err, _ := b.pullOnce.Do(artifact.Runtime.BaseImage, func() (any, error) {
+		return nil, b.ensureImage(ctx, artifact.Runtime.BaseImage)
+	}); err != nil {
+		return Result{}, fmt.Errorf("pulling base image %s: %w", artifact.Runtime.BaseImage, err)
 	}
 
 	b.logger.Info("building image", "server", srv.Name, "tag", imageTag)
@@ -374,6 +381,33 @@ func httpGet(ctx context.Context, url string) ([]byte, error) {
 	}
 
 	return io.ReadAll(resp.Body)
+}
+
+func (b *Builder) ensureImage(ctx context.Context, imageRef string) error {
+	images, err := b.docker.ImageList(ctx, image.ListOptions{
+		Filters: filters.NewArgs(filters.Arg("reference", imageRef)),
+	})
+	if err != nil {
+		return fmt.Errorf("listing images: %w", err)
+	}
+	if len(images) > 0 {
+		b.logger.Debug("base image already present", "image", imageRef)
+		return nil
+	}
+
+	b.logger.Info("pulling base image", "image", imageRef)
+	reader, err := b.docker.ImagePull(ctx, imageRef, image.PullOptions{})
+	if err != nil {
+		return fmt.Errorf("pulling image %s: %w", imageRef, err)
+	}
+	defer func() { _ = reader.Close() }()
+
+	if _, err := io.Copy(io.Discard, reader); err != nil {
+		return fmt.Errorf("reading pull response for %s: %w", imageRef, err)
+	}
+
+	b.logger.Info("base image pulled", "image", imageRef)
+	return nil
 }
 
 func (b *Builder) imageExists(ctx context.Context, tag string) bool {
