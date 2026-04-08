@@ -175,15 +175,15 @@ ore down           # stop and remove all servers
 
 ```
 ore up [--no-cache] [--force]       Build and start all servers
-ore down                            Stop and remove all servers
+ore down                            Stop and remove all containers
 ore status                          Show server and service status
 ore build [--no-cache]              Build all server images
 ore console <server>                Attach to a running server console
-ore clean all                       Remove all servers, images, data, and build cache
-ore clean servers                   Stop and remove all running servers
-ore clean images                    Remove unused server images
-ore clean data                      Permanently remove server data volumes
-ore clean cache                     Remove cached binaries
+ore clean all                       Remove all containers, images, volumes, and build artifacts
+ore clean containers                Stop and remove all containers and the network
+ore clean images                    Remove Docker images built by ore
+ore clean volumes                   Remove Docker volumes (persistent server data)
+ore clean cache                     Remove cached software binaries
 ore clean builds                    Remove build artifacts
 ore nodes list                      List configured nodes
 ore nodes add <name>                Add a remote node (--addr, --token required; --project, --force optional)

@@ -75,6 +75,7 @@ func New(pm *project.Manager, token string, logger *slog.Logger, logLevel slog.L
 	ops := projectRes.MountRoutes(authed)
 
 	controllers.ServerResource{PM: pm, LogLevel: logLevel, Logger: logger}.MountRoutes(ops)
+	controllers.ServiceResource{PM: pm, LogLevel: logLevel, Logger: logger}.MountRoutes(ops)
 
 	webhookGroup := fuego.Group(api, "/webhook")
 	fuego.Use(webhookGroup, mw.CORS())

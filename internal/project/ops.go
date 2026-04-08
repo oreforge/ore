@@ -191,6 +191,42 @@ func (m *Manager) Status(ctx context.Context, name string) (*deploy.NetworkStatu
 	return rp.deployer.Status(ctx, rp.spec)
 }
 
+func (m *Manager) Detail(name string) (specPath string, s *spec.Network, state *deploy.State, err error) {
+	specPath, err = m.Resolve(name)
+	if err != nil {
+		return "", nil, nil, err
+	}
+
+	s, err = spec.Load(specPath)
+	if err != nil {
+		return "", nil, nil, err
+	}
+
+	repoRoot := filepath.Dir(specPath)
+	if wd, wdErr := build.NewWorkDir(repoRoot, m.logger); wdErr == nil {
+		state = deploy.LoadState(wd.Root())
+	} else {
+		state = deploy.NewDeployState()
+	}
+
+	return specPath, s, state, nil
+}
+
+func (m *Manager) Builds(name string) (*build.Manifest, error) {
+	specPath, err := m.Resolve(name)
+	if err != nil {
+		return nil, err
+	}
+
+	repoRoot := filepath.Dir(specPath)
+	wd, err := build.NewWorkDir(repoRoot, m.logger)
+	if err != nil {
+		return nil, fmt.Errorf("opening .ore directory: %w", err)
+	}
+
+	return wd.Manifest(), nil
+}
+
 func (m *Manager) Clean(ctx context.Context, name string, target CleanTarget, logger *slog.Logger) error {
 	specPath, err := m.Resolve(name)
 	if err != nil {
@@ -316,6 +352,46 @@ func (m *Manager) ServerStatus(ctx context.Context, projectName, serverName stri
 	defer func() { _ = rp.docker.Close() }()
 
 	return rp.deployer.ServerStatus(ctx, rp.spec, serverName)
+}
+
+func (m *Manager) StartService(ctx context.Context, projectName, serviceName string, logger *slog.Logger) error {
+	rp, err := m.resolveAndDeploy(ctx, projectName, logger)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rp.docker.Close() }()
+
+	return rp.deployer.StartService(ctx, rp.spec, serviceName, logger)
+}
+
+func (m *Manager) StopService(ctx context.Context, projectName, serviceName string, logger *slog.Logger) error {
+	rp, err := m.resolveAndDeploy(ctx, projectName, logger)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rp.docker.Close() }()
+
+	return rp.deployer.StopService(ctx, rp.spec, serviceName, logger)
+}
+
+func (m *Manager) RestartService(ctx context.Context, projectName, serviceName string, logger *slog.Logger) error {
+	rp, err := m.resolveAndDeploy(ctx, projectName, logger)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rp.docker.Close() }()
+
+	return rp.deployer.RestartService(ctx, rp.spec, serviceName, logger)
+}
+
+func (m *Manager) ServiceStatus(ctx context.Context, projectName, serviceName string) (*deploy.ServerStatus, error) {
+	rp, err := m.resolveAndDeploy(ctx, projectName, m.logger)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rp.docker.Close() }()
+
+	return rp.deployer.ServiceStatus(ctx, rp.spec, serviceName)
 }
 
 func (m *Manager) Deploy(ctx context.Context, name string, opts UpOptions) error {

@@ -60,9 +60,18 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) *fuego.Server {
 		option.AddResponse(http.StatusUnprocessableEntity, "Clone failed or missing ore.yaml", fuego.Response{Type: fuego.HTTPError{}}),
 		bearer,
 	)
+	fuego.Get(projects, "/{name}", rs.detail,
+		option.Summary("Get project detail"),
+		option.Description("Returns the full project specification, deploy state, and gitops configuration."),
+		option.Tags("Projects"),
+		option.OperationID("getProject"),
+		option.Path("name", "Project name"),
+		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
+		bearer,
+	)
 	fuego.DeleteStd(projects, "/{name}", rs.remove,
 		option.Summary("Remove a project"),
-		option.Description("Stops all servers and removes the project directory."),
+		option.Description("Stops all containers and removes the project directory."),
 		option.Tags("Projects"),
 		option.OperationID("removeProject"),
 		option.Path("name", "Project name"),
@@ -76,6 +85,14 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) *fuego.Server {
 		option.Path("name", "Project name"),
 	)
 
+	fuego.Get(ops, "/builds", rs.builds,
+		option.Summary("Get build history"),
+		option.Description("Returns the build manifest including cached binaries and build artifacts."),
+		option.Tags("Projects"),
+		option.OperationID("getBuilds"),
+		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
+		bearer,
+	)
 	fuego.PostStd(ops, "/update", rs.update,
 		option.Summary("Update a project"),
 		option.OverrideDescription(ndjsonDesc),
@@ -164,6 +181,29 @@ func (rs ProjectResource) list(_ fuego.ContextNoBody) (dto.ProjectListResponse, 
 		return dto.ProjectListResponse{}, fuego.HTTPError{Status: 500, Detail: err.Error()}
 	}
 	return dto.ProjectListResponse{Projects: names}, nil
+}
+
+func (rs ProjectResource) detail(c fuego.ContextNoBody) (dto.ProjectDetailResponse, error) {
+	name := c.PathParam("name")
+	_, s, state, err := rs.PM.Detail(name)
+	if err != nil {
+		return dto.ProjectDetailResponse{}, fuego.HTTPError{Status: 404, Detail: err.Error()}
+	}
+
+	return dto.ProjectDetailResponse{
+		Name:  name,
+		Spec:  dto.NewSpecResponse(s),
+		State: dto.NewStateResponse(state),
+	}, nil
+}
+
+func (rs ProjectResource) builds(c fuego.ContextNoBody) (dto.BuildsResponse, error) {
+	name := c.PathParam("name")
+	manifest, err := rs.PM.Builds(name)
+	if err != nil {
+		return dto.BuildsResponse{}, fuego.HTTPError{Status: 404, Detail: err.Error()}
+	}
+	return *manifest, nil
 }
 
 func (rs ProjectResource) add(c fuego.ContextWithBody[dto.AddProjectRequest]) (dto.ProjectResponse, error) {
