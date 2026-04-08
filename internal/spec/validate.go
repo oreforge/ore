@@ -2,6 +2,7 @@ package spec
 
 import (
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -9,6 +10,12 @@ import (
 func Validate(s *Network) error {
 	if s.Network == "" {
 		return fmt.Errorf("validation: network name is required")
+	}
+
+	if s.Icon != "" {
+		if err := validateIconPath(s.Icon); err != nil {
+			return fmt.Errorf("validation: %w", err)
+		}
 	}
 
 	if len(s.Servers) == 0 {
@@ -172,6 +179,17 @@ func validateImageFormat(img string) error {
 	parts := strings.SplitN(img, ":", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return fmt.Errorf("image %q must be in format name:tag (e.g. postgres:16)", img)
+	}
+	return nil
+}
+
+func validateIconPath(p string) error {
+	if filepath.IsAbs(p) {
+		return fmt.Errorf("icon path must be relative, got %q", p)
+	}
+	cleaned := filepath.Clean(p)
+	if cleaned == "." || strings.HasPrefix(cleaned, "..") {
+		return fmt.Errorf("icon path must point to a file, got %q", p)
 	}
 	return nil
 }

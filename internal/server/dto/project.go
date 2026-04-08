@@ -55,6 +55,7 @@ type StateService struct {
 
 type SpecResponse struct {
 	Network  string        `json:"network"`
+	Icon     string        `json:"icon,omitempty"`
 	Servers  []SpecServer  `json:"servers"`
 	Services []SpecService `json:"services,omitempty"`
 	GitOps   *SpecGitOps   `json:"gitops,omitempty"`
@@ -121,6 +122,7 @@ type SpecGitOpsWebhook struct {
 func NewSpecResponse(s *spec.Network) SpecResponse {
 	resp := SpecResponse{
 		Network:  s.Network,
+		Icon:     s.Icon,
 		Servers:  make([]SpecServer, len(s.Servers)),
 		Services: make([]SpecService, len(s.Services)),
 	}

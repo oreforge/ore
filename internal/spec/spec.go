@@ -9,6 +9,7 @@ import (
 
 type Network struct {
 	Network  string    `yaml:"network"`
+	Icon     string    `yaml:"icon,omitempty"`
 	GitOps   *GitOps   `yaml:"gitops,omitempty"`
 	Servers  []Server  `yaml:"servers"`
 	Services []Service `yaml:"services,omitempty"`

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"strings"
 
 	"github.com/oreforge/ore/internal/build"
 	"github.com/oreforge/ore/internal/deploy"
@@ -210,6 +211,35 @@ func (m *Manager) Detail(name string) (specPath string, s *spec.Network, state *
 	}
 
 	return specPath, s, state, nil
+}
+
+func (m *Manager) IconPath(name string) (string, error) {
+	specPath, err := m.Resolve(name)
+	if err != nil {
+		return "", err
+	}
+
+	s, err := spec.Load(specPath)
+	if err != nil {
+		return "", err
+	}
+
+	if s.Icon == "" {
+		return "", fmt.Errorf("project %q has no icon configured", name)
+	}
+
+	projectDir := filepath.Dir(specPath)
+	abs, err := filepath.Abs(filepath.Join(projectDir, s.Icon))
+	if err != nil {
+		return "", fmt.Errorf("resolving icon path: %w", err)
+	}
+
+	absProject, _ := filepath.Abs(projectDir)
+	if !strings.HasPrefix(abs, absProject+string(filepath.Separator)) {
+		return "", fmt.Errorf("icon path escapes project directory")
+	}
+
+	return abs, nil
 }
 
 func (m *Manager) Builds(name string) (*build.Manifest, error) {

@@ -102,6 +102,14 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) *fuego.Server {
 		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
 		bearer,
 	)
+	fuego.GetStd(ops, "/icon", rs.icon,
+		option.Summary("Get project icon"),
+		option.Description("Returns the project icon image file. Returns 404 if no icon is configured."),
+		option.Tags("Projects"),
+		option.OperationID("getProjectIcon"),
+		option.AddResponse(http.StatusNotFound, "No icon configured or file not found", fuego.Response{Type: fuego.HTTPError{}}),
+		bearer,
+	)
 	fuego.Get(ops, "/status", rs.status,
 		option.Summary("Get network status"),
 		option.Description("Returns the status of all servers in the project network."),
@@ -185,9 +193,13 @@ func (rs ProjectResource) list(_ fuego.ContextNoBody) (dto.ProjectListResponse, 
 
 func (rs ProjectResource) detail(c fuego.ContextNoBody) (dto.ProjectDetailResponse, error) {
 	name := c.PathParam("name")
+	if _, resolveErr := rs.PM.Resolve(name); resolveErr != nil {
+		return dto.ProjectDetailResponse{}, fuego.HTTPError{Status: 404, Detail: resolveErr.Error()}
+	}
+
 	_, s, state, err := rs.PM.Detail(name)
 	if err != nil {
-		return dto.ProjectDetailResponse{}, fuego.HTTPError{Status: 404, Detail: err.Error()}
+		return dto.ProjectDetailResponse{}, fuego.HTTPError{Status: 500, Detail: err.Error()}
 	}
 
 	return dto.ProjectDetailResponse{
@@ -199,11 +211,57 @@ func (rs ProjectResource) detail(c fuego.ContextNoBody) (dto.ProjectDetailRespon
 
 func (rs ProjectResource) builds(c fuego.ContextNoBody) (dto.BuildsResponse, error) {
 	name := c.PathParam("name")
+	if _, resolveErr := rs.PM.Resolve(name); resolveErr != nil {
+		return dto.BuildsResponse{}, fuego.HTTPError{Status: 404, Detail: resolveErr.Error()}
+	}
+
 	manifest, err := rs.PM.Builds(name)
 	if err != nil {
-		return dto.BuildsResponse{}, fuego.HTTPError{Status: 404, Detail: err.Error()}
+		return dto.BuildsResponse{}, fuego.HTTPError{Status: 500, Detail: err.Error()}
 	}
 	return *manifest, nil
+}
+
+var mimeTypes = map[string]string{
+	".png":  "image/png",
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".gif":  "image/gif",
+	".svg":  "image/svg+xml",
+	".webp": "image/webp",
+	".ico":  "image/x-icon",
+}
+
+func (rs ProjectResource) icon(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	iconPath, err := rs.PM.IconPath(name)
+	if err != nil {
+		errs.Write(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	f, err := os.Open(iconPath)
+	if err != nil {
+		errs.Write(w, http.StatusNotFound, "icon file not found")
+		return
+	}
+	defer func() { _ = f.Close() }()
+
+	info, err := f.Stat()
+	if err != nil || info.IsDir() {
+		errs.Write(w, http.StatusNotFound, "icon file not found")
+		return
+	}
+
+	ext := strings.ToLower(filepath.Ext(iconPath))
+	contentType, ok := mimeTypes[ext]
+	if !ok {
+		contentType = "application/octet-stream"
+	}
+
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	http.ServeContent(w, r, info.Name(), info.ModTime(), f)
 }
 
 func (rs ProjectResource) add(c fuego.ContextWithBody[dto.AddProjectRequest]) (dto.ProjectResponse, error) {
