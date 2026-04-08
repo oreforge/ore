@@ -327,7 +327,7 @@ func (d *Deployer) Down(ctx context.Context, cfg *spec.Network) error {
 	return nil
 }
 
-func (d *Deployer) PruneImages(ctx context.Context, cfg *spec.Network) error {
+func (d *Deployer) CleanImages(ctx context.Context, cfg *spec.Network) error {
 	images, err := d.docker.ImageList(ctx, image.ListOptions{})
 	if err != nil {
 		return fmt.Errorf("listing images: %w", err)
@@ -356,11 +356,11 @@ func (d *Deployer) PruneImages(ctx context.Context, cfg *spec.Network) error {
 		}
 	}
 
-	d.logger.Info("pruned images", "network", cfg.Network)
+	d.logger.Info("cleaned images", "network", cfg.Network)
 	return nil
 }
 
-func (d *Deployer) PruneVolumes(ctx context.Context, cfg *spec.Network) error {
+func (d *Deployer) CleanVolumes(ctx context.Context, cfg *spec.Network) error {
 	for _, srv := range cfg.Servers {
 		if err := RemoveVolumes(ctx, d.docker, &srv, cfg.Network, d.logger); err != nil {
 			d.logger.Warn("failed to remove volumes", "server", srv.Name, "error", err)
@@ -373,7 +373,7 @@ func (d *Deployer) PruneVolumes(ctx context.Context, cfg *spec.Network) error {
 		}
 	}
 
-	d.logger.Info("pruned volumes", "network", cfg.Network)
+	d.logger.Info("cleaned volumes", "network", cfg.Network)
 	return nil
 }
 

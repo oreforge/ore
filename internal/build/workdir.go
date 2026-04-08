@@ -295,35 +295,3 @@ func (w *WorkDir) CleanBuilds() error {
 	w.manifest.Builds = make(map[string]Entry)
 	return w.SaveManifest()
 }
-
-func (w *WorkDir) Prune(maxAge time.Duration) error {
-	cutoff := time.Now().Add(-maxAge)
-	w.logger.Info("pruning artifacts", "older_than", maxAge, "cutoff", cutoff)
-
-	var buildKeys []string
-	for key, entry := range w.manifest.Builds {
-		if entry.BuiltAt.Before(cutoff) {
-			dir := filepath.Join(w.root, "builds", entry.ServerName+"-"+entry.CacheKey)
-			_ = os.RemoveAll(dir)
-			buildKeys = append(buildKeys, key)
-		}
-	}
-	for _, key := range buildKeys {
-		delete(w.manifest.Builds, key)
-	}
-
-	var binaryKeys []string
-	for hash, entry := range w.manifest.Binaries {
-		if entry.CachedAt.Before(cutoff) {
-			_ = os.Remove(w.binaryPath(entry.SoftwareID, entry.Filename))
-			dirName := strings.ReplaceAll(entry.SoftwareID, ":", "-")
-			_ = os.RemoveAll(filepath.Join(w.root, "cache", dirName))
-			binaryKeys = append(binaryKeys, hash)
-		}
-	}
-	for _, key := range binaryKeys {
-		delete(w.manifest.Binaries, key)
-	}
-
-	return w.SaveManifest()
-}

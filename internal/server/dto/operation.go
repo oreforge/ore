@@ -9,12 +9,8 @@ type UpRequest struct {
 	Force   bool `json:"force,omitempty" example:"false"`
 }
 
-type PruneRequest struct {
-	Target string `json:"target,omitempty" example:"all" doc:"Target to clean (all, servers, images, data)"`
-}
-
 type CleanRequest struct {
-	Target string `json:"target,omitempty" example:"all"`
+	Target string `json:"target,omitempty" example:"all" doc:"Target to clean (all, containers, images, volumes, cache, builds)"`
 }
 
 type BuildRequest struct {

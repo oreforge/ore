@@ -1,46 +1,17 @@
 package cli
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 
-	"github.com/oreforge/ore/internal/deploy"
-	"github.com/oreforge/ore/internal/docker"
-	"github.com/oreforge/ore/internal/spec"
+	"github.com/oreforge/ore/internal/project"
 )
 
 func newDownCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "down",
-		Short:   "Stop and remove all servers",
+		Short:   "Stop and remove all containers",
 		Example: "ore down",
 		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			local, specPath, remote, err := resolveMode(cmd)
-			if err != nil {
-				return err
-			}
-			if remote != nil {
-				defer func() { _ = remote.Close() }()
-			}
-
-			if local {
-				s, err := spec.Load(specPath)
-				if err != nil {
-					return err
-				}
-
-				dockerClient, err := docker.New(cmd.Context())
-				if err != nil {
-					return fmt.Errorf("connecting to Docker: %w", err)
-				}
-				defer func() { _ = dockerClient.Close() }()
-
-				deployer := deploy.New(dockerClient, logger, nil, true)
-				return deployer.Down(cmd.Context(), s)
-			}
-			return remote.Down(cmd.Context())
-		},
+		RunE:    cleanRunE(project.CleanContainers),
 	}
 }

@@ -14,19 +14,13 @@ import (
 	"github.com/oreforge/ore/internal/spec"
 )
 
-type PruneTarget int
-
-const (
-	PruneAll PruneTarget = iota
-	PruneContainers
-	PruneImages
-	PruneVolumes
-)
-
 type CleanTarget int
 
 const (
 	CleanAll CleanTarget = iota
+	CleanContainers
+	CleanImages
+	CleanVolumes
 	CleanCache
 	CleanBuilds
 )
@@ -36,25 +30,16 @@ type UpOptions struct {
 	Force   bool
 }
 
-func (t PruneTarget) String() string {
-	switch t {
-	case PruneAll:
-		return "all"
-	case PruneContainers:
-		return "servers"
-	case PruneImages:
-		return "images"
-	case PruneVolumes:
-		return "data"
-	default:
-		return fmt.Sprintf("unknown(%d)", int(t))
-	}
-}
-
 func (t CleanTarget) String() string {
 	switch t {
 	case CleanAll:
 		return "all"
+	case CleanContainers:
+		return "containers"
+	case CleanImages:
+		return "images"
+	case CleanVolumes:
+		return "volumes"
 	case CleanCache:
 		return "cache"
 	case CleanBuilds:
@@ -206,67 +191,77 @@ func (m *Manager) Status(ctx context.Context, name string) (*deploy.NetworkStatu
 	return rp.deployer.Status(ctx, rp.spec)
 }
 
-func (m *Manager) Prune(ctx context.Context, name string, target PruneTarget, logger *slog.Logger) error {
-	rp, err := m.resolveAndDeploy(ctx, name, logger)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = rp.docker.Close() }()
-
-	return ExecutePrune(ctx, rp.deployer, rp.spec, filepath.Dir(rp.specPath), target, logger)
-}
-
-func ExecutePrune(ctx context.Context, deployer *deploy.Deployer, s *spec.Network, repoRoot string, target PruneTarget, logger *slog.Logger) error {
-	switch target {
-	case PruneAll:
-		var errs []error
-		if err := deployer.Down(ctx, s); err != nil {
-			errs = append(errs, fmt.Errorf("stopping servers: %w", err))
-		}
-		if err := deployer.PruneImages(ctx, s); err != nil {
-			errs = append(errs, fmt.Errorf("pruning images: %w", err))
-		}
-		if err := deployer.PruneVolumes(ctx, s); err != nil {
-			errs = append(errs, fmt.Errorf("pruning volumes: %w", err))
-		}
-		if wd, wdErr := build.NewWorkDir(repoRoot, logger); wdErr == nil {
-			if cleanErr := wd.Clean(); cleanErr != nil {
-				errs = append(errs, fmt.Errorf("cleaning .ore directory: %w", cleanErr))
-			}
-		}
-		if len(errs) == 0 {
-			logger.Info("cleaned all resources", "network", s.Network)
-		}
-		return errors.Join(errs...)
-	case PruneContainers:
-		return deployer.Down(ctx, s)
-	case PruneImages:
-		return deployer.PruneImages(ctx, s)
-	case PruneVolumes:
-		return deployer.PruneVolumes(ctx, s)
-	default:
-		return fmt.Errorf("unknown prune target: %d", target)
-	}
-}
-
-func (m *Manager) Clean(_ context.Context, name string, target CleanTarget, logger *slog.Logger) error {
+func (m *Manager) Clean(ctx context.Context, name string, target CleanTarget, logger *slog.Logger) error {
 	specPath, err := m.Resolve(name)
 	if err != nil {
 		return err
 	}
 
 	repoRoot := filepath.Dir(specPath)
-	wd, err := build.NewWorkDir(repoRoot, logger)
-	if err != nil {
-		return fmt.Errorf("opening .ore directory: %w", err)
+	return ExecuteClean(ctx, specPath, repoRoot, target, m.bindMounts, logger)
+}
+
+func ExecuteClean(ctx context.Context, specPath, repoRoot string, target CleanTarget, bindMounts bool, logger *slog.Logger) error {
+	needsDocker := target == CleanAll || target == CleanContainers || target == CleanImages || target == CleanVolumes
+
+	var deployer *deploy.Deployer
+	var s *spec.Network
+	if needsDocker {
+		var err error
+		s, err = spec.Load(specPath)
+		if err != nil {
+			return err
+		}
+
+		dockerClient, err := docker.New(ctx)
+		if err != nil {
+			return fmt.Errorf("connecting to Docker: %w", err)
+		}
+		defer func() { _ = dockerClient.Close() }()
+
+		deployer = deploy.New(dockerClient, logger, nil, bindMounts)
 	}
 
 	switch target {
 	case CleanAll:
-		return wd.Clean()
+		var errs []error
+		if err := deployer.Down(ctx, s); err != nil {
+			errs = append(errs, fmt.Errorf("stopping containers: %w", err))
+		}
+		if err := deployer.CleanImages(ctx, s); err != nil {
+			errs = append(errs, fmt.Errorf("cleaning images: %w", err))
+		}
+		if err := deployer.CleanVolumes(ctx, s); err != nil {
+			errs = append(errs, fmt.Errorf("cleaning volumes: %w", err))
+		}
+		if wd, wdErr := build.NewWorkDir(repoRoot, logger); wdErr == nil {
+			if cleanErr := wd.Clean(); cleanErr != nil {
+				errs = append(errs, fmt.Errorf("cleaning .ore directory: %w", cleanErr))
+			}
+		}
+		if len(errs) > 0 {
+			logger.Warn("clean all completed with errors", "network", s.Network, "errors", errors.Join(errs...))
+			return errors.Join(errs...)
+		}
+		logger.Info("cleaned all resources", "network", s.Network)
+		return nil
+	case CleanContainers:
+		return deployer.Down(ctx, s)
+	case CleanImages:
+		return deployer.CleanImages(ctx, s)
+	case CleanVolumes:
+		return deployer.CleanVolumes(ctx, s)
 	case CleanCache:
+		wd, err := build.NewWorkDir(repoRoot, logger)
+		if err != nil {
+			return fmt.Errorf("opening .ore directory: %w", err)
+		}
 		return wd.CleanCache()
 	case CleanBuilds:
+		wd, err := build.NewWorkDir(repoRoot, logger)
+		if err != nil {
+			return fmt.Errorf("opening .ore directory: %w", err)
+		}
 		return wd.CleanBuilds()
 	default:
 		return fmt.Errorf("unknown clean target: %d", target)

@@ -124,19 +124,8 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
 		bearer,
 	)
-	fuego.PostStd(ops, "/prune", rs.prune,
-		option.Summary("Clean resources"),
-		option.OverrideDescription(ndjsonDesc),
-		option.Tags("Projects"),
-		option.OperationID("prune"),
-		option.RequestBody(fuego.RequestBody{Type: dto.PruneRequest{}}),
-		option.AddResponse(http.StatusOK, "NDJSON progress stream", fuego.Response{Type: dto.StreamLine{}}),
-		option.AddResponse(http.StatusBadRequest, "Invalid request body", fuego.Response{Type: fuego.HTTPError{}}),
-		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
-		bearer,
-	)
 	fuego.PostStd(ops, "/clean", rs.clean,
-		option.Summary("Clean artifacts"),
+		option.Summary("Clean resources"),
 		option.OverrideDescription(ndjsonDesc),
 		option.Tags("Projects"),
 		option.OperationID("clean"),
@@ -341,30 +330,6 @@ func (rs ProjectResource) build(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (rs ProjectResource) prune(w http.ResponseWriter, r *http.Request) {
-	body, err := decodeBody[dto.PruneRequest](r)
-	if err != nil {
-		errs.Write(w, http.StatusBadRequest, "invalid request body: "+err.Error())
-		return
-	}
-
-	var target project.PruneTarget
-	switch body.Target {
-	case "servers":
-		target = project.PruneContainers
-	case "images":
-		target = project.PruneImages
-	case "data":
-		target = project.PruneVolumes
-	default:
-		target = project.PruneAll
-	}
-
-	rs.resolveAndStream(w, r, func(name string, logger *slog.Logger) error {
-		return rs.PM.Prune(r.Context(), name, target, logger)
-	})
-}
-
 func (rs ProjectResource) clean(w http.ResponseWriter, r *http.Request) {
 	body, err := decodeBody[dto.CleanRequest](r)
 	if err != nil {
@@ -374,12 +339,21 @@ func (rs ProjectResource) clean(w http.ResponseWriter, r *http.Request) {
 
 	var target project.CleanTarget
 	switch body.Target {
+	case "", "all":
+		target = project.CleanAll
+	case "containers":
+		target = project.CleanContainers
+	case "images":
+		target = project.CleanImages
+	case "volumes":
+		target = project.CleanVolumes
 	case "cache":
 		target = project.CleanCache
 	case "builds":
 		target = project.CleanBuilds
 	default:
-		target = project.CleanAll
+		errs.Write(w, http.StatusBadRequest, "unknown clean target: "+body.Target+" (valid: all, containers, images, volumes, cache, builds)")
+		return
 	}
 
 	rs.resolveAndStream(w, r, func(name string, logger *slog.Logger) error {

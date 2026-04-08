@@ -1,29 +1,24 @@
 package cli
 
 import (
-	"fmt"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
 
-	"github.com/oreforge/ore/internal/build"
-	"github.com/oreforge/ore/internal/deploy"
-	"github.com/oreforge/ore/internal/docker"
 	"github.com/oreforge/ore/internal/project"
-	"github.com/oreforge/ore/internal/spec"
 )
 
 func newCleanCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "clean",
-		Short: "Remove servers, images, data, or build cache",
+		Short: "Remove containers, images, volumes, or build artifacts",
 	}
 
 	cmd.AddCommand(
 		newCleanAllCmd(),
-		newCleanServersCmd(),
+		newCleanContainersCmd(),
 		newCleanImagesCmd(),
-		newCleanDataCmd(),
+		newCleanVolumesCmd(),
 		newCleanCacheCmd(),
 		newCleanBuildsCmd(),
 	)
@@ -34,161 +29,76 @@ func newCleanCmd() *cobra.Command {
 func newCleanAllCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "all",
-		Short:   "Remove all servers, images, data, and build cache",
+		Short:   "Remove all containers, images, volumes, and build artifacts",
 		Example: "ore clean all",
 		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			local, specPath, remote, err := resolveMode(cmd)
-			if err != nil {
-				return err
-			}
-			if remote != nil {
-				defer func() { _ = remote.Close() }()
-			}
-
-			if local {
-				return pruneLocal(cmd, specPath, project.PruneAll)
-			}
-			return remote.Prune(cmd.Context(), project.PruneAll)
-		},
+		RunE:    cleanRunE(project.CleanAll),
 	}
 }
 
-func newCleanCacheCmd() *cobra.Command {
+func newCleanContainersCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "cache",
-		Short: "Remove cached binaries",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			local, specPath, remote, err := resolveMode(cmd)
-			if err != nil {
-				return err
-			}
-			if remote != nil {
-				defer func() { _ = remote.Close() }()
-			}
-
-			if local {
-				return cleanLocalDir(specPath, "cache")
-			}
-			return remote.Clean(cmd.Context(), project.CleanCache)
-		},
-	}
-}
-
-func newCleanBuildsCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "builds",
-		Short: "Remove build artifacts",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			local, specPath, remote, err := resolveMode(cmd)
-			if err != nil {
-				return err
-			}
-			if remote != nil {
-				defer func() { _ = remote.Close() }()
-			}
-
-			if local {
-				return cleanLocalDir(specPath, "builds")
-			}
-			return remote.Clean(cmd.Context(), project.CleanBuilds)
-		},
-	}
-}
-
-func newCleanServersCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "servers",
-		Short: "Stop and remove all running servers",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			local, specPath, remote, err := resolveMode(cmd)
-			if err != nil {
-				return err
-			}
-			if remote != nil {
-				defer func() { _ = remote.Close() }()
-			}
-
-			if local {
-				return pruneLocal(cmd, specPath, project.PruneContainers)
-			}
-			return remote.Prune(cmd.Context(), project.PruneContainers)
-		},
+		Use:     "containers",
+		Short:   "Stop and remove all containers and the network",
+		Example: "ore clean containers",
+		Args:    cobra.NoArgs,
+		RunE:    cleanRunE(project.CleanContainers),
 	}
 }
 
 func newCleanImagesCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "images",
-		Short: "Remove unused server images",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			local, specPath, remote, err := resolveMode(cmd)
-			if err != nil {
-				return err
-			}
-			if remote != nil {
-				defer func() { _ = remote.Close() }()
-			}
-
-			if local {
-				return pruneLocal(cmd, specPath, project.PruneImages)
-			}
-			return remote.Prune(cmd.Context(), project.PruneImages)
-		},
-	}
-}
-
-func newCleanDataCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:     "data",
-		Short:   "Permanently remove server data volumes",
-		Example: "ore clean data",
+		Use:     "images",
+		Short:   "Remove Docker images built by ore",
+		Example: "ore clean images",
 		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			local, specPath, remote, err := resolveMode(cmd)
-			if err != nil {
-				return err
-			}
-			if remote != nil {
-				defer func() { _ = remote.Close() }()
-			}
-
-			if local {
-				return pruneLocal(cmd, specPath, project.PruneVolumes)
-			}
-			return remote.Prune(cmd.Context(), project.PruneVolumes)
-		},
+		RunE:    cleanRunE(project.CleanImages),
 	}
 }
 
-func cleanLocalDir(specPath, target string) error {
-	repoRoot := filepath.Dir(specPath)
-	wd, err := build.NewWorkDir(repoRoot, logger)
-	if err != nil {
-		return fmt.Errorf("opening .ore directory: %w", err)
+func newCleanVolumesCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "volumes",
+		Short:   "Remove Docker volumes (persistent server data)",
+		Example: "ore clean volumes",
+		Args:    cobra.NoArgs,
+		RunE:    cleanRunE(project.CleanVolumes),
 	}
-	if target == "cache" {
-		return wd.CleanCache()
-	}
-	return wd.CleanBuilds()
 }
 
-func pruneLocal(cmd *cobra.Command, specPath string, target project.PruneTarget) error {
-	s, err := spec.Load(specPath)
-	if err != nil {
-		return err
+func newCleanCacheCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "cache",
+		Short:   "Remove cached software binaries",
+		Example: "ore clean cache",
+		Args:    cobra.NoArgs,
+		RunE:    cleanRunE(project.CleanCache),
 	}
+}
 
-	dockerClient, err := docker.New(cmd.Context())
-	if err != nil {
-		return fmt.Errorf("connecting to Docker: %w", err)
+func newCleanBuildsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "builds",
+		Short:   "Remove build artifacts",
+		Example: "ore clean builds",
+		Args:    cobra.NoArgs,
+		RunE:    cleanRunE(project.CleanBuilds),
 	}
-	defer func() { _ = dockerClient.Close() }()
+}
 
-	deployer := deploy.New(dockerClient, logger, nil, true)
-	return project.ExecutePrune(cmd.Context(), deployer, s, filepath.Dir(specPath), target, logger)
+func cleanRunE(target project.CleanTarget) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, _ []string) error {
+		local, specPath, remote, err := resolveMode(cmd)
+		if err != nil {
+			return err
+		}
+		if remote != nil {
+			defer func() { _ = remote.Close() }()
+		}
+
+		if local {
+			return project.ExecuteClean(cmd.Context(), specPath, filepath.Dir(specPath), target, true, logger)
+		}
+		return remote.Clean(cmd.Context(), target)
+	}
 }

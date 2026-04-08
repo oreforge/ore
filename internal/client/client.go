@@ -134,14 +134,6 @@ func (c *Client) Status(ctx context.Context) (*deploy.NetworkStatus, error) {
 	return &status, nil
 }
 
-func (c *Client) Prune(ctx context.Context, target project.PruneTarget) error {
-	if err := c.requireProject(); err != nil {
-		return err
-	}
-	body, _ := json.Marshal(map[string]any{"target": target.String()})
-	return c.streamRequest(ctx, "POST", c.projectPath()+"/prune", body)
-}
-
 func (c *Client) Clean(ctx context.Context, target project.CleanTarget) error {
 	if err := c.requireProject(); err != nil {
 		return err
