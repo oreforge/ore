@@ -38,7 +38,7 @@ type ProjectResource struct {
 	Token        string
 }
 
-func (rs ProjectResource) MountRoutes(s *fuego.Server) {
+func (rs ProjectResource) MountRoutes(s *fuego.Server) *fuego.Server {
 	bearer := option.Security(openapi3.SecurityRequirement{"bearerAuth": {}})
 
 	projects := fuego.Group(s, "/projects")
@@ -154,6 +154,8 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) {
 		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
 		bearer,
 	)
+
+	return ops
 }
 
 func (rs ProjectResource) list(_ fuego.ContextNoBody) (dto.ProjectListResponse, error) {

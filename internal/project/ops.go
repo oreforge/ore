@@ -268,6 +268,56 @@ func ExecuteClean(ctx context.Context, specPath, repoRoot string, target CleanTa
 	}
 }
 
+func (m *Manager) StartServer(ctx context.Context, projectName, serverName string, logger *slog.Logger) error {
+	rp, err := m.resolveAndDeploy(ctx, projectName, logger)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rp.docker.Close() }()
+
+	var state *deploy.State
+	if wd, wdErr := build.NewWorkDir(filepath.Dir(rp.specPath), logger); wdErr == nil {
+		state = deploy.LoadState(wd.Root())
+	}
+
+	return rp.deployer.StartServer(ctx, rp.spec, serverName, state, logger)
+}
+
+func (m *Manager) StopServer(ctx context.Context, projectName, serverName string, logger *slog.Logger) error {
+	rp, err := m.resolveAndDeploy(ctx, projectName, logger)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rp.docker.Close() }()
+
+	return rp.deployer.StopServer(ctx, rp.spec, serverName, logger)
+}
+
+func (m *Manager) RestartServer(ctx context.Context, projectName, serverName string, logger *slog.Logger) error {
+	rp, err := m.resolveAndDeploy(ctx, projectName, logger)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rp.docker.Close() }()
+
+	var state *deploy.State
+	if wd, wdErr := build.NewWorkDir(filepath.Dir(rp.specPath), logger); wdErr == nil {
+		state = deploy.LoadState(wd.Root())
+	}
+
+	return rp.deployer.RestartServer(ctx, rp.spec, serverName, state, logger)
+}
+
+func (m *Manager) ServerStatus(ctx context.Context, projectName, serverName string) (*deploy.ServerStatus, error) {
+	rp, err := m.resolveAndDeploy(ctx, projectName, m.logger)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rp.docker.Close() }()
+
+	return rp.deployer.ServerStatus(ctx, rp.spec, serverName)
+}
+
 func (m *Manager) Deploy(ctx context.Context, name string, opts UpOptions) error {
 	m.logger.Info("deploying project", "project", name)
 

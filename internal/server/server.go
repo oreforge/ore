@@ -71,7 +71,10 @@ func New(pm *project.Manager, token string, logger *slog.Logger, logLevel slog.L
 	if token != "" {
 		fuego.Use(authed, mw.BearerAuth(token))
 	}
-	controllers.ProjectResource{PM: pm, DockerClient: dockerClient, LogLevel: logLevel, Logger: logger, Token: token}.MountRoutes(authed)
+	projectRes := controllers.ProjectResource{PM: pm, DockerClient: dockerClient, LogLevel: logLevel, Logger: logger, Token: token}
+	ops := projectRes.MountRoutes(authed)
+
+	controllers.ServerResource{PM: pm, LogLevel: logLevel, Logger: logger}.MountRoutes(ops)
 
 	webhookGroup := fuego.Group(api, "/webhook")
 	fuego.Use(webhookGroup, mw.CORS())
