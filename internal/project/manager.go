@@ -83,12 +83,21 @@ func (m *Manager) Pull(ctx context.Context, name string) error {
 	if _, err := os.Stat(filepath.Join(projectDir, ".git")); err != nil {
 		return fmt.Errorf("project %s is not a git repository", name)
 	}
-	gitCtx, cancel := context.WithTimeout(ctx, gitTimeout)
-	defer cancel()
-	cmd := exec.CommandContext(gitCtx, "git", "-C", projectDir, "pull")
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git pull failed: %s", strings.TrimSpace(string(output)))
+
+	fetchCtx, fetchCancel := context.WithTimeout(ctx, gitTimeout)
+	defer fetchCancel()
+	fetchCmd := exec.CommandContext(fetchCtx, "git", "-C", projectDir, "fetch")
+	if output, err := fetchCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git fetch failed: %s", strings.TrimSpace(string(output)))
 	}
+
+	resetCtx, resetCancel := context.WithTimeout(ctx, gitTimeout)
+	defer resetCancel()
+	resetCmd := exec.CommandContext(resetCtx, "git", "-C", projectDir, "reset", "--hard", "@{u}")
+	if output, err := resetCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git reset failed: %s", strings.TrimSpace(string(output)))
+	}
+
 	return nil
 }
 
