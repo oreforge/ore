@@ -75,12 +75,13 @@ func (rs ServiceResource) MountRoutes(s *fuego.Server) {
 func (rs ServiceResource) list(c fuego.ContextNoBody) (dto.ServiceListResponse, error) {
 	name := c.PathParam("name")
 	if _, err := rs.PM.Resolve(name); err != nil {
-		return dto.ServiceListResponse{}, fuego.HTTPError{Status: 404, Detail: err.Error()}
+		return dto.ServiceListResponse{}, fuego.HTTPError{Status: 404, Detail: "project not found"}
 	}
 
 	status, err := rs.PM.Status(c.Context(), name)
 	if err != nil {
-		return dto.ServiceListResponse{}, fuego.HTTPError{Status: 500, Detail: err.Error()}
+		rs.Logger.Error("failed to get service list", "project", name, "error", err)
+		return dto.ServiceListResponse{}, fuego.HTTPError{Status: 500, Detail: "failed to get service status"}
 	}
 
 	return dto.ServiceListResponse{
@@ -93,12 +94,12 @@ func (rs ServiceResource) get(c fuego.ContextNoBody) (dto.ServiceStatusResponse,
 	serviceName := c.PathParam("service")
 
 	if _, err := rs.PM.Resolve(name); err != nil {
-		return dto.ServiceStatusResponse{}, fuego.HTTPError{Status: 404, Detail: err.Error()}
+		return dto.ServiceStatusResponse{}, fuego.HTTPError{Status: 404, Detail: "project not found"}
 	}
 
 	status, err := rs.PM.ServiceStatus(c.Context(), name, serviceName)
 	if err != nil {
-		return dto.ServiceStatusResponse{}, fuego.HTTPError{Status: 404, Detail: err.Error()}
+		return dto.ServiceStatusResponse{}, fuego.HTTPError{Status: 404, Detail: "service not found"}
 	}
 
 	return *status, nil
@@ -109,7 +110,7 @@ func (rs ServiceResource) start(w http.ResponseWriter, r *http.Request) {
 	serviceName := r.PathValue("service")
 
 	if _, err := rs.PM.Resolve(name); err != nil {
-		errs.Write(w, http.StatusNotFound, err.Error())
+		errs.Write(w, http.StatusNotFound, "project not found")
 		return
 	}
 
@@ -123,7 +124,7 @@ func (rs ServiceResource) stop(w http.ResponseWriter, r *http.Request) {
 	serviceName := r.PathValue("service")
 
 	if _, err := rs.PM.Resolve(name); err != nil {
-		errs.Write(w, http.StatusNotFound, err.Error())
+		errs.Write(w, http.StatusNotFound, "project not found")
 		return
 	}
 
@@ -137,7 +138,7 @@ func (rs ServiceResource) restart(w http.ResponseWriter, r *http.Request) {
 	serviceName := r.PathValue("service")
 
 	if _, err := rs.PM.Resolve(name); err != nil {
-		errs.Write(w, http.StatusNotFound, err.Error())
+		errs.Write(w, http.StatusNotFound, "project not found")
 		return
 	}
 

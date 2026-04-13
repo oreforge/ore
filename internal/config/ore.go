@@ -3,39 +3,54 @@ package config
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/adrg/xdg"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
 
-var oreV *viper.Viper
+var (
+	oreV    *viper.Viper
+	oreOnce sync.Once
+)
 
 func LoadOre(flags *pflag.FlagSet) (*OreConfig, error) {
-	v := viper.New()
+	var initErr error
+	oreOnce.Do(func() {
+		v := viper.New()
 
-	v.SetDefault("log_level", "info")
-	v.SetDefault("verbose", false)
-	v.SetDefault("context", "")
-	v.SetDefault("nodes", map[string]any{})
+		v.SetDefault("log_level", "info")
+		v.SetDefault("verbose", false)
+		v.SetDefault("context", "")
+		v.SetDefault("nodes", map[string]any{})
 
-	v.SetEnvPrefix("ORE")
-	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-	v.AutomaticEnv()
+		v.SetEnvPrefix("ORE")
+		v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+		v.AutomaticEnv()
 
-	v.SetConfigName("config")
-	v.SetConfigType("yaml")
-	v.AddConfigPath(OreConfigDir())
-	for _, dir := range xdg.ConfigDirs {
-		v.AddConfigPath(dir + "/ore")
+		v.SetConfigName("config")
+		v.SetConfigType("yaml")
+		v.AddConfigPath(OreConfigDir())
+		for _, dir := range xdg.ConfigDirs {
+			v.AddConfigPath(dir + "/ore")
+		}
+
+		if err := readOrCreateConfig(v, OreConfigFile()); err != nil {
+			initErr = err
+			return
+		}
+
+		oreV = v
+	})
+	if initErr != nil {
+		return nil, initErr
+	}
+	if oreV == nil {
+		return nil, fmt.Errorf("ore config not initialized")
 	}
 
-	if err := readOrCreateConfig(v, OreConfigFile()); err != nil {
-		return nil, err
-	}
-
-	oreV = v
-
+	v := oreV
 	if flags != nil {
 		v = viper.New()
 		err := v.MergeConfigMap(oreV.AllSettings())

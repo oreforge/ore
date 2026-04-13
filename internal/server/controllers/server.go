@@ -77,12 +77,13 @@ func (rs ServerResource) MountRoutes(s *fuego.Server) {
 func (rs ServerResource) list(c fuego.ContextNoBody) (dto.ServerListResponse, error) {
 	name := c.PathParam("name")
 	if _, err := rs.PM.Resolve(name); err != nil {
-		return dto.ServerListResponse{}, fuego.HTTPError{Status: 404, Detail: err.Error()}
+		return dto.ServerListResponse{}, fuego.HTTPError{Status: 404, Detail: "project not found"}
 	}
 
 	status, err := rs.PM.Status(c.Context(), name)
 	if err != nil {
-		return dto.ServerListResponse{}, fuego.HTTPError{Status: 500, Detail: err.Error()}
+		rs.Logger.Error("failed to get server list", "project", name, "error", err)
+		return dto.ServerListResponse{}, fuego.HTTPError{Status: 500, Detail: "failed to get server status"}
 	}
 
 	return dto.ServerListResponse{
@@ -96,12 +97,12 @@ func (rs ServerResource) get(c fuego.ContextNoBody) (dto.ServerStatusResponse, e
 	serverName := c.PathParam("server")
 
 	if _, err := rs.PM.Resolve(name); err != nil {
-		return dto.ServerStatusResponse{}, fuego.HTTPError{Status: 404, Detail: err.Error()}
+		return dto.ServerStatusResponse{}, fuego.HTTPError{Status: 404, Detail: "project not found"}
 	}
 
 	status, err := rs.PM.ServerStatus(c.Context(), name, serverName)
 	if err != nil {
-		return dto.ServerStatusResponse{}, fuego.HTTPError{Status: 404, Detail: err.Error()}
+		return dto.ServerStatusResponse{}, fuego.HTTPError{Status: 404, Detail: "server not found"}
 	}
 
 	return *status, nil
@@ -112,7 +113,7 @@ func (rs ServerResource) start(w http.ResponseWriter, r *http.Request) {
 	serverName := r.PathValue("server")
 
 	if _, err := rs.PM.Resolve(name); err != nil {
-		errs.Write(w, http.StatusNotFound, err.Error())
+		errs.Write(w, http.StatusNotFound, "project not found")
 		return
 	}
 
@@ -126,7 +127,7 @@ func (rs ServerResource) stop(w http.ResponseWriter, r *http.Request) {
 	serverName := r.PathValue("server")
 
 	if _, err := rs.PM.Resolve(name); err != nil {
-		errs.Write(w, http.StatusNotFound, err.Error())
+		errs.Write(w, http.StatusNotFound, "project not found")
 		return
 	}
 
@@ -140,7 +141,7 @@ func (rs ServerResource) restart(w http.ResponseWriter, r *http.Request) {
 	serverName := r.PathValue("server")
 
 	if _, err := rs.PM.Resolve(name); err != nil {
-		errs.Write(w, http.StatusNotFound, err.Error())
+		errs.Write(w, http.StatusNotFound, "project not found")
 		return
 	}
 

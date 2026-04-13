@@ -186,7 +186,8 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) *fuego.Server {
 func (rs ProjectResource) list(_ fuego.ContextNoBody) (dto.ProjectListResponse, error) {
 	names, err := rs.PM.List()
 	if err != nil {
-		return dto.ProjectListResponse{}, fuego.HTTPError{Status: 500, Detail: err.Error()}
+		rs.Logger.Error("failed to list projects", "error", err)
+		return dto.ProjectListResponse{}, fuego.HTTPError{Status: 500, Detail: "failed to list projects"}
 	}
 	return dto.ProjectListResponse{Projects: names}, nil
 }
@@ -194,12 +195,13 @@ func (rs ProjectResource) list(_ fuego.ContextNoBody) (dto.ProjectListResponse, 
 func (rs ProjectResource) detail(c fuego.ContextNoBody) (dto.ProjectDetailResponse, error) {
 	name := c.PathParam("name")
 	if _, resolveErr := rs.PM.Resolve(name); resolveErr != nil {
-		return dto.ProjectDetailResponse{}, fuego.HTTPError{Status: 404, Detail: resolveErr.Error()}
+		return dto.ProjectDetailResponse{}, fuego.HTTPError{Status: 404, Detail: "project not found"}
 	}
 
 	_, s, state, err := rs.PM.Detail(name)
 	if err != nil {
-		return dto.ProjectDetailResponse{}, fuego.HTTPError{Status: 500, Detail: err.Error()}
+		rs.Logger.Error("failed to get project detail", "project", name, "error", err)
+		return dto.ProjectDetailResponse{}, fuego.HTTPError{Status: 500, Detail: "failed to load project details"}
 	}
 
 	return dto.ProjectDetailResponse{
@@ -212,12 +214,13 @@ func (rs ProjectResource) detail(c fuego.ContextNoBody) (dto.ProjectDetailRespon
 func (rs ProjectResource) builds(c fuego.ContextNoBody) (dto.BuildsResponse, error) {
 	name := c.PathParam("name")
 	if _, resolveErr := rs.PM.Resolve(name); resolveErr != nil {
-		return dto.BuildsResponse{}, fuego.HTTPError{Status: 404, Detail: resolveErr.Error()}
+		return dto.BuildsResponse{}, fuego.HTTPError{Status: 404, Detail: "project not found"}
 	}
 
 	manifest, err := rs.PM.Builds(name)
 	if err != nil {
-		return dto.BuildsResponse{}, fuego.HTTPError{Status: 500, Detail: err.Error()}
+		rs.Logger.Error("failed to get builds", "project", name, "error", err)
+		return dto.BuildsResponse{}, fuego.HTTPError{Status: 500, Detail: "failed to load build manifest"}
 	}
 	return *manifest, nil
 }
@@ -280,7 +283,7 @@ func (rs ProjectResource) add(c fuego.ContextWithBody[dto.AddProjectRequest]) (d
 		var nameErr error
 		name, nameErr = nameFromURL(body.URL)
 		if nameErr != nil {
-			return dto.ProjectResponse{}, fuego.HTTPError{Status: 400, Detail: "invalid repository URL: " + nameErr.Error()}
+			return dto.ProjectResponse{}, fuego.HTTPError{Status: 400, Detail: "cannot derive project name from URL"}
 		}
 	}
 
@@ -296,7 +299,8 @@ func (rs ProjectResource) add(c fuego.ContextWithBody[dto.AddProjectRequest]) (d
 	cmd := exec.CommandContext(c.Context(), "git", "clone", body.URL, projectDir)
 	if output, cloneErr := cmd.CombinedOutput(); cloneErr != nil {
 		_ = os.RemoveAll(projectDir)
-		return dto.ProjectResponse{}, fuego.HTTPError{Status: 422, Detail: "git clone failed: " + strings.TrimSpace(string(output))}
+		rs.Logger.Error("git clone failed", "url", body.URL, "output", strings.TrimSpace(string(output)))
+		return dto.ProjectResponse{}, fuego.HTTPError{Status: 422, Detail: "git clone failed"}
 	}
 
 	specPath := filepath.Join(projectDir, "ore.yaml")
@@ -313,7 +317,7 @@ func (rs ProjectResource) add(c fuego.ContextWithBody[dto.AddProjectRequest]) (d
 func (rs ProjectResource) remove(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if _, err := rs.PM.Resolve(name); err != nil {
-		errs.Write(w, http.StatusNotFound, err.Error())
+		errs.Write(w, http.StatusNotFound, "project not found")
 		return
 	}
 
@@ -324,7 +328,8 @@ func (rs ProjectResource) remove(w http.ResponseWriter, r *http.Request) {
 
 	projectDir := filepath.Join(rs.PM.ProjectsDir(), name)
 	if err := os.RemoveAll(projectDir); err != nil {
-		errs.Write(w, http.StatusInternalServerError, "removing project: "+err.Error())
+		rs.Logger.Error("failed to remove project directory", "project", name, "error", err)
+		errs.Write(w, http.StatusInternalServerError, "failed to remove project")
 		return
 	}
 
@@ -334,7 +339,7 @@ func (rs ProjectResource) remove(w http.ResponseWriter, r *http.Request) {
 func (rs ProjectResource) update(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if _, err := rs.PM.Resolve(name); err != nil {
-		errs.Write(w, http.StatusNotFound, err.Error())
+		errs.Write(w, http.StatusNotFound, "project not found")
 		return
 	}
 
@@ -362,11 +367,12 @@ func (rs ProjectResource) resolveProject(r *http.Request) (string, error) {
 func (rs ProjectResource) status(c fuego.ContextNoBody) (dto.StatusResponse, error) {
 	name := c.PathParam("name")
 	if _, err := rs.PM.Resolve(name); err != nil {
-		return dto.StatusResponse{}, fuego.HTTPError{Status: 404, Detail: err.Error()}
+		return dto.StatusResponse{}, fuego.HTTPError{Status: 404, Detail: "project not found"}
 	}
 	s, err := rs.PM.Status(c.Context(), name)
 	if err != nil {
-		return dto.StatusResponse{}, fuego.HTTPError{Status: 500, Detail: err.Error()}
+		rs.Logger.Error("failed to get status", "project", name, "error", err)
+		return dto.StatusResponse{}, fuego.HTTPError{Status: 500, Detail: "failed to get project status"}
 	}
 	return *s, nil
 }
@@ -388,7 +394,7 @@ func decodeBody[T any](r *http.Request) (T, error) {
 func (rs ProjectResource) resolveAndStream(w http.ResponseWriter, r *http.Request, fn func(name string, logger *slog.Logger) error) {
 	name, err := rs.resolveProject(r)
 	if err != nil {
-		errs.Write(w, http.StatusNotFound, err.Error())
+		errs.Write(w, http.StatusNotFound, "project not found")
 		return
 	}
 
@@ -462,9 +468,26 @@ func (rs ProjectResource) clean(w http.ResponseWriter, r *http.Request) {
 }
 
 func (rs ProjectResource) console(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
 	serverName := r.URL.Query().Get("server")
 	if serverName == "" {
 		errs.Write(w, http.StatusBadRequest, "missing server query parameter")
+		return
+	}
+
+	specPath, err := rs.PM.Resolve(name)
+	if err != nil {
+		errs.Write(w, http.StatusNotFound, "project not found")
+		return
+	}
+	s, err := spec.Load(specPath)
+	if err != nil {
+		rs.Logger.Error("console: failed to load spec", "project", name, "error", err)
+		errs.Write(w, http.StatusInternalServerError, "failed to load project spec")
+		return
+	}
+	if !hasServer(s, serverName) {
+		errs.Write(w, http.StatusBadRequest, "server not found in project spec")
 		return
 	}
 
@@ -479,9 +502,7 @@ func (rs ProjectResource) console(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true,
-	})
+	conn, err := websocket.Accept(w, r, nil)
 	if err != nil {
 		return
 	}
@@ -591,11 +612,12 @@ func (rs ProjectResource) webhookInfo(c fuego.ContextNoBody) (dto.WebhookInfoRes
 	name := c.PathParam("name")
 	specPath, err := rs.PM.Resolve(name)
 	if err != nil {
-		return dto.WebhookInfoResponse{}, fuego.HTTPError{Status: 404, Detail: err.Error()}
+		return dto.WebhookInfoResponse{}, fuego.HTTPError{Status: 404, Detail: "project not found"}
 	}
 
 	s, err := spec.Load(specPath)
 	if err != nil {
+		rs.Logger.Error("failed to load spec", "project", name, "error", err)
 		return dto.WebhookInfoResponse{}, fuego.HTTPError{Status: 500, Detail: "failed to load project spec"}
 	}
 
@@ -614,6 +636,15 @@ func (rs ProjectResource) webhookInfo(c fuego.ContextNoBody) (dto.WebhookInfoRes
 		Force:   s.GitOps.Webhook.Force,
 		NoCache: s.GitOps.Webhook.NoCache,
 	}, nil
+}
+
+func hasServer(s *spec.Network, name string) bool {
+	for _, srv := range s.Servers {
+		if srv.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func nameFromURL(rawURL string) (string, error) {

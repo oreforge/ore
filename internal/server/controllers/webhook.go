@@ -64,7 +64,7 @@ func (rs WebhookResource) handle(w http.ResponseWriter, r *http.Request) {
 
 	specPath, err := rs.PM.Resolve(name)
 	if err != nil {
-		errs.Write(w, http.StatusNotFound, err.Error())
+		errs.Write(w, http.StatusNotFound, "project not found")
 		return
 	}
 

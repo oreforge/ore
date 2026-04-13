@@ -106,7 +106,11 @@ func (m *Manager) Up(ctx context.Context, name string, opts UpOptions, logger *s
 	if err != nil {
 		return err
 	}
-	defer func() { _ = br.docker.Close() }()
+	defer func() {
+		if err := br.docker.Close(); err != nil {
+			logger.Warn("failed to close docker client", "error", err)
+		}
+	}()
 
 	var prevState *deploy.State
 	if !opts.Force && br.workDir != nil {
@@ -163,7 +167,11 @@ func (m *Manager) Down(ctx context.Context, name string, logger *slog.Logger) er
 	if err != nil {
 		return err
 	}
-	defer func() { _ = rp.docker.Close() }()
+	defer func() {
+		if err := rp.docker.Close(); err != nil {
+			logger.Warn("failed to close docker client", "error", err)
+		}
+	}()
 
 	return rp.deployer.Down(ctx, rp.spec)
 }
@@ -178,7 +186,9 @@ func (m *Manager) Build(ctx context.Context, name string, noCache bool, logger *
 	if err != nil {
 		return err
 	}
-	_ = br.docker.Close()
+	if closeErr := br.docker.Close(); closeErr != nil {
+		logger.Warn("failed to close docker client", "error", closeErr)
+	}
 	return nil
 }
 
@@ -187,7 +197,11 @@ func (m *Manager) Status(ctx context.Context, name string) (*deploy.NetworkStatu
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rp.docker.Close() }()
+	defer func() {
+		if err := rp.docker.Close(); err != nil {
+			m.logger.Warn("failed to close docker client", "error", err)
+		}
+	}()
 
 	return rp.deployer.Status(ctx, rp.spec)
 }
@@ -283,7 +297,11 @@ func ExecuteClean(ctx context.Context, specPath, repoRoot string, target CleanTa
 		if err != nil {
 			return fmt.Errorf("connecting to Docker: %w", err)
 		}
-		defer func() { _ = dockerClient.Close() }()
+		defer func() {
+			if err := dockerClient.Close(); err != nil {
+				logger.Warn("failed to close docker client", "error", err)
+			}
+		}()
 
 		deployer = deploy.New(dockerClient, logger, nil, bindMounts)
 	}
@@ -339,7 +357,11 @@ func (m *Manager) StartServer(ctx context.Context, projectName, serverName strin
 	if err != nil {
 		return err
 	}
-	defer func() { _ = rp.docker.Close() }()
+	defer func() {
+		if err := rp.docker.Close(); err != nil {
+			logger.Warn("failed to close docker client", "error", err)
+		}
+	}()
 
 	var state *deploy.State
 	if wd, wdErr := build.NewWorkDir(filepath.Dir(rp.specPath), logger); wdErr == nil {
@@ -354,7 +376,11 @@ func (m *Manager) StopServer(ctx context.Context, projectName, serverName string
 	if err != nil {
 		return err
 	}
-	defer func() { _ = rp.docker.Close() }()
+	defer func() {
+		if err := rp.docker.Close(); err != nil {
+			logger.Warn("failed to close docker client", "error", err)
+		}
+	}()
 
 	return rp.deployer.StopServer(ctx, rp.spec, serverName, logger)
 }
@@ -364,7 +390,11 @@ func (m *Manager) RestartServer(ctx context.Context, projectName, serverName str
 	if err != nil {
 		return err
 	}
-	defer func() { _ = rp.docker.Close() }()
+	defer func() {
+		if err := rp.docker.Close(); err != nil {
+			logger.Warn("failed to close docker client", "error", err)
+		}
+	}()
 
 	var state *deploy.State
 	if wd, wdErr := build.NewWorkDir(filepath.Dir(rp.specPath), logger); wdErr == nil {
@@ -379,7 +409,11 @@ func (m *Manager) ServerStatus(ctx context.Context, projectName, serverName stri
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rp.docker.Close() }()
+	defer func() {
+		if err := rp.docker.Close(); err != nil {
+			m.logger.Warn("failed to close docker client", "error", err)
+		}
+	}()
 
 	return rp.deployer.ServerStatus(ctx, rp.spec, serverName)
 }
@@ -389,7 +423,11 @@ func (m *Manager) StartService(ctx context.Context, projectName, serviceName str
 	if err != nil {
 		return err
 	}
-	defer func() { _ = rp.docker.Close() }()
+	defer func() {
+		if err := rp.docker.Close(); err != nil {
+			logger.Warn("failed to close docker client", "error", err)
+		}
+	}()
 
 	return rp.deployer.StartService(ctx, rp.spec, serviceName, logger)
 }
@@ -399,7 +437,11 @@ func (m *Manager) StopService(ctx context.Context, projectName, serviceName stri
 	if err != nil {
 		return err
 	}
-	defer func() { _ = rp.docker.Close() }()
+	defer func() {
+		if err := rp.docker.Close(); err != nil {
+			logger.Warn("failed to close docker client", "error", err)
+		}
+	}()
 
 	return rp.deployer.StopService(ctx, rp.spec, serviceName, logger)
 }
@@ -409,7 +451,11 @@ func (m *Manager) RestartService(ctx context.Context, projectName, serviceName s
 	if err != nil {
 		return err
 	}
-	defer func() { _ = rp.docker.Close() }()
+	defer func() {
+		if err := rp.docker.Close(); err != nil {
+			logger.Warn("failed to close docker client", "error", err)
+		}
+	}()
 
 	return rp.deployer.RestartService(ctx, rp.spec, serviceName, logger)
 }
@@ -419,7 +465,11 @@ func (m *Manager) ServiceStatus(ctx context.Context, projectName, serviceName st
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rp.docker.Close() }()
+	defer func() {
+		if err := rp.docker.Close(); err != nil {
+			m.logger.Warn("failed to close docker client", "error", err)
+		}
+	}()
 
 	return rp.deployer.ServiceStatus(ctx, rp.spec, serviceName)
 }

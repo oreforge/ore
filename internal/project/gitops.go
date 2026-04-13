@@ -122,9 +122,16 @@ func (m *Manager) TriggerDeploy(name string, opts UpOptions) bool {
 	if !m.acquireDeploy(name) {
 		return false
 	}
+	ctx := context.Background()
+	if m.pollCtx != nil {
+		ctx = m.pollCtx
+	}
 	go func() {
 		defer m.releaseDeploy(name)
-		if err := m.Deploy(context.Background(), name, opts); err != nil {
+		if err := m.Deploy(ctx, name, opts); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
 			m.logger.Error("triggered deploy failed", "project", name, "error", err)
 		}
 	}()

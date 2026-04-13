@@ -14,12 +14,14 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-type Client interface {
+type ImageClient interface {
 	ImageBuild(ctx context.Context, buildContext io.Reader, options dockerbuild.ImageBuildOptions) (dockerbuild.ImageBuildResponse, error)
 	ImageList(ctx context.Context, options image.ListOptions) ([]image.Summary, error)
 	ImagePull(ctx context.Context, refStr string, options image.PullOptions) (io.ReadCloser, error)
 	ImageRemove(ctx context.Context, imageID string, options image.RemoveOptions) ([]image.DeleteResponse, error)
+}
 
+type ContainerClient interface {
 	ContainerCreate(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error)
 	ContainerStart(ctx context.Context, containerID string, options container.StartOptions) error
 	ContainerStop(ctx context.Context, containerID string, options container.StopOptions) error
@@ -29,16 +31,25 @@ type Client interface {
 	ContainerStatsOneShot(ctx context.Context, containerID string) (container.StatsResponseReader, error)
 	ContainerAttach(ctx context.Context, container string, options container.AttachOptions) (types.HijackedResponse, error)
 	ContainerResize(ctx context.Context, container string, options container.ResizeOptions) error
+}
 
+type NetworkClient interface {
 	NetworkCreate(ctx context.Context, name string, options network.CreateOptions) (network.CreateResponse, error)
 	NetworkRemove(ctx context.Context, networkID string) error
 	NetworkList(ctx context.Context, options network.ListOptions) ([]network.Summary, error)
+}
 
+type VolumeClient interface {
 	VolumeCreate(ctx context.Context, options volume.CreateOptions) (volume.Volume, error)
 	VolumeRemove(ctx context.Context, volumeID string, force bool) error
+}
 
+type Client interface {
+	ImageClient
+	ContainerClient
+	NetworkClient
+	VolumeClient
 	ServerVersion(ctx context.Context) (types.Version, error)
-
 	Close() error
 }
 

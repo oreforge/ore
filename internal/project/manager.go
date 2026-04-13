@@ -88,14 +88,14 @@ func (m *Manager) Pull(ctx context.Context, name string) error {
 	defer fetchCancel()
 	fetchCmd := exec.CommandContext(fetchCtx, "git", "-C", projectDir, "fetch")
 	if output, err := fetchCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git fetch failed: %s", strings.TrimSpace(string(output)))
+		return fmt.Errorf("git fetch failed (%s): %w", strings.TrimSpace(string(output)), err)
 	}
 
 	resetCtx, resetCancel := context.WithTimeout(ctx, gitTimeout)
 	defer resetCancel()
 	resetCmd := exec.CommandContext(resetCtx, "git", "-C", projectDir, "reset", "--hard", "@{u}")
 	if output, err := resetCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git reset failed: %s", strings.TrimSpace(string(output)))
+		return fmt.Errorf("git reset failed (%s): %w", strings.TrimSpace(string(output)), err)
 	}
 
 	return nil
@@ -111,7 +111,7 @@ func (m *Manager) hasRemoteChanges(ctx context.Context, name string) (bool, erro
 	defer fetchCancel()
 	fetchCmd := exec.CommandContext(fetchCtx, "git", "-C", projectDir, "fetch")
 	if output, err := fetchCmd.CombinedOutput(); err != nil {
-		return false, fmt.Errorf("git fetch failed: %s", strings.TrimSpace(string(output)))
+		return false, fmt.Errorf("git fetch failed (%s): %w", strings.TrimSpace(string(output)), err)
 	}
 
 	localCmd := exec.CommandContext(ctx, "git", "-C", projectDir, "rev-parse", "HEAD")
