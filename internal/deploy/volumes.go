@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/docker/docker/api/types/volume"
 
@@ -13,15 +14,48 @@ import (
 	"github.com/oreforge/ore/internal/spec"
 )
 
-func volumeName(networkName, containerName, volName string) string {
-	return networkName + "_" + containerName + "_" + volName
+const (
+	LabelManaged    = "ore.managed"
+	LabelProject    = "ore.project"
+	LabelOwner      = "ore.owner"
+	LabelOwnerKind  = "ore.owner.kind"
+	LabelVolume     = "ore.volume"
+	LabelCreatedAt  = "ore.created.at"
+	LabelSchema     = "ore.schema"
+	OwnerKindServer = "server"
+	OwnerKindSvc    = "service"
+	SchemaVersion   = "1"
+)
+
+func VolumeNameFor(networkName, ownerContainer, logical string) string {
+	return networkName + "_" + ownerContainer + "_" + logical
 }
 
-func ensureVolumes(ctx context.Context, client docker.Client, containerName, networkName string, vols []spec.Volume, logger *slog.Logger) error {
+func volumeName(networkName, containerName, volName string) string {
+	return VolumeNameFor(networkName, containerName, volName)
+}
+
+func managedLabels(project, owner, ownerKind, logical string) map[string]string {
+	return map[string]string{
+		LabelManaged:   "true",
+		LabelProject:   project,
+		LabelOwner:     owner,
+		LabelOwnerKind: ownerKind,
+		LabelVolume:    logical,
+		LabelCreatedAt: time.Now().UTC().Format(time.RFC3339),
+		LabelSchema:    SchemaVersion,
+	}
+}
+
+func ensureVolumes(ctx context.Context, client docker.Client, ownerName, ownerKind, networkName string, vols []spec.Volume, logger *slog.Logger) error {
 	for _, vol := range vols {
-		name := volumeName(networkName, containerName, vol.Name)
+		name := volumeName(networkName, ownerName, vol.Name)
 		logger.Debug("ensuring volume", "volume", name)
-		if _, err := client.VolumeCreate(ctx, volume.CreateOptions{Name: name}); err != nil {
+		opts := volume.CreateOptions{
+			Name:   name,
+			Labels: managedLabels(networkName, ownerName, ownerKind, vol.Name),
+		}
+		if _, err := client.VolumeCreate(ctx, opts); err != nil {
 			return fmt.Errorf("creating volume %s: %w", name, err)
 		}
 	}
@@ -29,11 +63,11 @@ func ensureVolumes(ctx context.Context, client docker.Client, containerName, net
 }
 
 func EnsureVolumes(ctx context.Context, client docker.Client, srv *spec.Server, networkName string, logger *slog.Logger) error {
-	return ensureVolumes(ctx, client, ContainerName(srv), networkName, srv.Volumes, logger)
+	return ensureVolumes(ctx, client, ContainerName(srv), OwnerKindServer, networkName, srv.Volumes, logger)
 }
 
 func EnsureServiceVolumes(ctx context.Context, client docker.Client, svc *spec.Service, networkName string, logger *slog.Logger) error {
-	return ensureVolumes(ctx, client, ServiceContainerName(svc), networkName, svc.Volumes, logger)
+	return ensureVolumes(ctx, client, ServiceContainerName(svc), OwnerKindSvc, networkName, svc.Volumes, logger)
 }
 
 func removeVolumes(ctx context.Context, client docker.Client, containerName, networkName string, vols []spec.Volume, logger *slog.Logger) error {

@@ -18,6 +18,7 @@ import (
 	"github.com/oreforge/ore/internal/project"
 	"github.com/oreforge/ore/internal/server/controllers"
 	mw "github.com/oreforge/ore/internal/server/middleware"
+	"github.com/oreforge/ore/internal/volumes"
 )
 
 type BuildInfo struct {
@@ -77,6 +78,7 @@ func New(pm *project.Manager, opStore *operation.Store, token string, logger *sl
 
 	controllers.ServerResource{PM: pm, Store: opStore, LogLevel: logLevel, Logger: logger}.MountRoutes(ops)
 	controllers.ServiceResource{PM: pm, Store: opStore, LogLevel: logLevel, Logger: logger}.MountRoutes(ops)
+	controllers.VolumeResource{PM: pm, Volumes: volumes.New(dockerClient, logger), Logger: logger}.MountRoutes(ops)
 
 	controllers.OperationResource{Store: opStore, Logger: logger, LogLevel: logLevel}.MountRoutes(authed)
 

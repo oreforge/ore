@@ -185,6 +185,8 @@ ore clean images                    Remove Docker images built by ore
 ore clean volumes                   Remove Docker volumes (persistent server data)
 ore clean cache                     Remove cached software binaries
 ore clean builds                    Remove build artifacts
+ore volumes ls                      List ore-managed Docker volumes (--output table|json)
+ore volumes inspect <name>          Show volume metadata and current usage
 ore nodes list                      List configured nodes
 ore nodes add <name>                Add a remote node (--addr, --token required; --project, --force optional)
 ore nodes show <name>               Show node details
@@ -268,6 +270,18 @@ Values support `${VAR}` environment variable expansion.
 | `paper`    | Java    | PaperMC API     |
 | `velocity` | Java 21 | PaperMC API     |
 | `gate`     | Native  | GitHub Releases |
+
+## Volumes
+
+ore tags every Docker volume it creates with a set of labels (`ore.managed`, `ore.project`, `ore.owner`, `ore.owner.kind`, `ore.volume`, `ore.created.at`, `ore.schema`). These labels make volumes discoverable and scopable per project without any external state.
+
+```sh
+ore volumes ls                     # list volumes in the current project
+ore volumes ls -o json             # same, as JSON
+ore volumes inspect <name>         # show metadata and which containers use it
+```
+
+Volumes created before labels were added will not appear in these views until they are recreated by `ore up`.
 
 ## Remote Mode
 

@@ -7,6 +7,7 @@ import (
 	"github.com/docker/docker/api/types"
 	dockerbuild "github.com/docker/docker/api/types/build"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/volume"
@@ -42,6 +43,9 @@ type NetworkClient interface {
 type VolumeClient interface {
 	VolumeCreate(ctx context.Context, options volume.CreateOptions) (volume.Volume, error)
 	VolumeRemove(ctx context.Context, volumeID string, force bool) error
+	VolumeList(ctx context.Context, options volume.ListOptions) (volume.ListResponse, error)
+	VolumeInspect(ctx context.Context, volumeID string) (volume.Volume, error)
+	VolumesPrune(ctx context.Context, pruneFilter filters.Args) (volume.PruneReport, error)
 }
 
 type Client interface {

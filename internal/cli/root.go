@@ -59,6 +59,7 @@ func Run(args []string, info BuildInfo) int {
 		newConsoleCmd(),
 		newProjectsCmd(),
 		newNodesCmd(),
+		newVolumesCmd(),
 		newVersionCmd(info),
 	)
 
