@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 
@@ -8,13 +9,14 @@ import (
 	"github.com/go-fuego/fuego"
 	"github.com/go-fuego/fuego/option"
 
+	"github.com/oreforge/ore/internal/operation"
 	"github.com/oreforge/ore/internal/project"
 	"github.com/oreforge/ore/internal/server/dto"
-	"github.com/oreforge/ore/internal/server/errs"
 )
 
 type ServiceResource struct {
 	PM       *project.Manager
+	Store    *operation.Store
 	LogLevel slog.Level
 	Logger   *slog.Logger
 }
@@ -42,32 +44,38 @@ func (rs ServiceResource) MountRoutes(s *fuego.Server) {
 
 	fuego.PostStd(services, "/{service}/start", rs.start,
 		option.Summary("Start a service"),
-		option.OverrideDescription(ndjsonDesc),
+		option.Description("Starts a service. Returns an operation that can be tracked via the operations API."),
 		option.Tags("Services"),
 		option.OperationID("startService"),
 		option.Path("service", "Service name"),
-		option.AddResponse(http.StatusOK, "NDJSON progress stream", fuego.Response{Type: dto.StreamLine{}}),
+		option.DefaultStatusCode(http.StatusAccepted),
+		option.AddResponse(http.StatusAccepted, "Operation accepted", fuego.Response{Type: dto.OperationResponse{}}),
 		option.AddResponse(http.StatusNotFound, "Service not found", fuego.Response{Type: fuego.HTTPError{}}),
+		option.AddResponse(http.StatusConflict, "Operation already in progress", fuego.Response{Type: fuego.HTTPError{}}),
 		bearer,
 	)
 	fuego.PostStd(services, "/{service}/stop", rs.stop,
 		option.Summary("Stop a service"),
-		option.OverrideDescription(ndjsonDesc),
+		option.Description("Stops a service. Returns an operation that can be tracked via the operations API."),
 		option.Tags("Services"),
 		option.OperationID("stopService"),
 		option.Path("service", "Service name"),
-		option.AddResponse(http.StatusOK, "NDJSON progress stream", fuego.Response{Type: dto.StreamLine{}}),
+		option.DefaultStatusCode(http.StatusAccepted),
+		option.AddResponse(http.StatusAccepted, "Operation accepted", fuego.Response{Type: dto.OperationResponse{}}),
 		option.AddResponse(http.StatusNotFound, "Service not found", fuego.Response{Type: fuego.HTTPError{}}),
+		option.AddResponse(http.StatusConflict, "Operation already in progress", fuego.Response{Type: fuego.HTTPError{}}),
 		bearer,
 	)
 	fuego.PostStd(services, "/{service}/restart", rs.restart,
 		option.Summary("Restart a service"),
-		option.OverrideDescription(ndjsonDesc),
+		option.Description("Restarts a service. Returns an operation that can be tracked via the operations API."),
 		option.Tags("Services"),
 		option.OperationID("restartService"),
 		option.Path("service", "Service name"),
-		option.AddResponse(http.StatusOK, "NDJSON progress stream", fuego.Response{Type: dto.StreamLine{}}),
+		option.DefaultStatusCode(http.StatusAccepted),
+		option.AddResponse(http.StatusAccepted, "Operation accepted", fuego.Response{Type: dto.OperationResponse{}}),
 		option.AddResponse(http.StatusNotFound, "Service not found", fuego.Response{Type: fuego.HTTPError{}}),
+		option.AddResponse(http.StatusConflict, "Operation already in progress", fuego.Response{Type: fuego.HTTPError{}}),
 		bearer,
 	)
 }
@@ -105,44 +113,23 @@ func (rs ServiceResource) get(c fuego.ContextNoBody) (dto.ServiceStatusResponse,
 	return *status, nil
 }
 
-func (rs ServiceResource) start(w http.ResponseWriter, r *http.Request) {
+func (rs ServiceResource) submit(w http.ResponseWriter, r *http.Request, action string, fn func(ctx context.Context, name, serviceName string, logger *slog.Logger) error) {
 	name := r.PathValue("name")
 	serviceName := r.PathValue("service")
+	submitOperation(w, rs.PM, rs.Store, rs.Logger, rs.LogLevel, name, action, serviceName,
+		func(ctx context.Context, logger *slog.Logger) error {
+			return fn(ctx, name, serviceName, logger)
+		})
+}
 
-	if _, err := rs.PM.Resolve(name); err != nil {
-		errs.Write(w, http.StatusNotFound, "project not found")
-		return
-	}
-
-	streamOperation(w, rs.LogLevel, rs.Logger, func(logger *slog.Logger) error {
-		return rs.PM.StartService(r.Context(), name, serviceName, logger)
-	})
+func (rs ServiceResource) start(w http.ResponseWriter, r *http.Request) {
+	rs.submit(w, r, operation.ActionStart, rs.PM.StartService)
 }
 
 func (rs ServiceResource) stop(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
-	serviceName := r.PathValue("service")
-
-	if _, err := rs.PM.Resolve(name); err != nil {
-		errs.Write(w, http.StatusNotFound, "project not found")
-		return
-	}
-
-	streamOperation(w, rs.LogLevel, rs.Logger, func(logger *slog.Logger) error {
-		return rs.PM.StopService(r.Context(), name, serviceName, logger)
-	})
+	rs.submit(w, r, operation.ActionStop, rs.PM.StopService)
 }
 
 func (rs ServiceResource) restart(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
-	serviceName := r.PathValue("service")
-
-	if _, err := rs.PM.Resolve(name); err != nil {
-		errs.Write(w, http.StatusNotFound, "project not found")
-		return
-	}
-
-	streamOperation(w, rs.LogLevel, rs.Logger, func(logger *slog.Logger) error {
-		return rs.PM.RestartService(r.Context(), name, serviceName, logger)
-	})
+	rs.submit(w, r, operation.ActionRestart, rs.PM.RestartService)
 }

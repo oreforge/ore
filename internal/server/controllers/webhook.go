@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"github.com/go-fuego/fuego"
 	"github.com/go-fuego/fuego/option"
 
+	"github.com/oreforge/ore/internal/operation"
 	"github.com/oreforge/ore/internal/project"
 	"github.com/oreforge/ore/internal/server/dto"
 	"github.com/oreforge/ore/internal/server/errs"
@@ -91,22 +93,30 @@ func (rs WebhookResource) handle(w http.ResponseWriter, r *http.Request) {
 		NoCache: parseBoolQuery(r, "no_cache", s.GitOps.Webhook.NoCache),
 	}
 
-	if !rs.PM.TriggerDeploy(name, opts) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusConflict)
-		_ = json.NewEncoder(w).Encode(dto.WebhookResponse{
+	opID, triggerErr := rs.PM.TriggerDeploy(name, opts)
+	if triggerErr != nil {
+		resp := dto.WebhookResponse{
 			Status:  "skipped",
 			Project: name,
-		})
+		}
+		if errors.Is(triggerErr, operation.ErrConflict) {
+			if active, ok := rs.PM.ActiveOperation(name); ok {
+				resp.OperationID = active.ID
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(resp)
 		return
 	}
 
-	rs.Logger.Info("webhook triggered deploy", "project", name)
+	rs.Logger.Info("webhook triggered deploy", "project", name, "operation", opID)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(dto.WebhookResponse{
-		Status:  "accepted",
-		Project: name,
+		Status:      "accepted",
+		Project:     name,
+		OperationID: opID,
 	})
 }

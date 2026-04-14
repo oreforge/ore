@@ -28,8 +28,9 @@ type WebhookInfoResponse struct {
 }
 
 type WebhookResponse struct {
-	Status  string `json:"status" example:"accepted"`
-	Project string `json:"project" example:"mynetwork"`
+	Status      string `json:"status" example:"accepted"`
+	Project     string `json:"project" example:"mynetwork"`
+	OperationID string `json:"operation_id,omitempty" example:"a1b2c3d4e5f6a7b8"`
 }
 
 type ProjectDetailResponse struct {

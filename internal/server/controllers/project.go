@@ -23,6 +23,7 @@ import (
 	"github.com/go-fuego/fuego/option"
 
 	"github.com/oreforge/ore/internal/docker"
+	"github.com/oreforge/ore/internal/operation"
 	"github.com/oreforge/ore/internal/project"
 	"github.com/oreforge/ore/internal/server/dto"
 	"github.com/oreforge/ore/internal/server/errs"
@@ -32,6 +33,7 @@ import (
 
 type ProjectResource struct {
 	PM           *project.Manager
+	Store        *operation.Store
 	DockerClient docker.Client
 	LogLevel     slog.Level
 	Logger       *slog.Logger
@@ -95,11 +97,13 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) *fuego.Server {
 	)
 	fuego.PostStd(ops, "/update", rs.update,
 		option.Summary("Update a project"),
-		option.OverrideDescription(ndjsonDesc),
+		option.Description("Pulls latest git changes and deploys. Returns an operation that can be tracked via the operations API."),
 		option.Tags("Projects"),
 		option.OperationID("updateProject"),
-		option.AddResponse(http.StatusOK, "NDJSON progress stream", fuego.Response{Type: dto.StreamLine{}}),
+		option.DefaultStatusCode(http.StatusAccepted),
+		option.AddResponse(http.StatusAccepted, "Operation accepted", fuego.Response{Type: dto.OperationResponse{}}),
 		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
+		option.AddResponse(http.StatusConflict, "Operation already in progress", fuego.Response{Type: fuego.HTTPError{}}),
 		bearer,
 	)
 	fuego.GetStd(ops, "/icon", rs.icon,
@@ -120,44 +124,52 @@ func (rs ProjectResource) MountRoutes(s *fuego.Server) *fuego.Server {
 	)
 	fuego.PostStd(ops, "/up", rs.up,
 		option.Summary("Start all servers"),
-		option.OverrideDescription(ndjsonDesc),
+		option.Description("Builds and starts all servers. Returns an operation that can be tracked via the operations API."),
 		option.Tags("Projects"),
 		option.OperationID("up"),
 		option.RequestBody(fuego.RequestBody{Type: dto.UpRequest{}}),
-		option.AddResponse(http.StatusOK, "NDJSON progress stream", fuego.Response{Type: dto.StreamLine{}}),
+		option.DefaultStatusCode(http.StatusAccepted),
+		option.AddResponse(http.StatusAccepted, "Operation accepted", fuego.Response{Type: dto.OperationResponse{}}),
 		option.AddResponse(http.StatusBadRequest, "Invalid request body", fuego.Response{Type: fuego.HTTPError{}}),
 		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
+		option.AddResponse(http.StatusConflict, "Operation already in progress", fuego.Response{Type: fuego.HTTPError{}}),
 		bearer,
 	)
 	fuego.PostStd(ops, "/down", rs.down,
 		option.Summary("Stop all servers"),
-		option.OverrideDescription(ndjsonDesc),
+		option.Description("Stops all servers. Returns an operation that can be tracked via the operations API."),
 		option.Tags("Projects"),
 		option.OperationID("down"),
-		option.AddResponse(http.StatusOK, "NDJSON progress stream", fuego.Response{Type: dto.StreamLine{}}),
+		option.DefaultStatusCode(http.StatusAccepted),
+		option.AddResponse(http.StatusAccepted, "Operation accepted", fuego.Response{Type: dto.OperationResponse{}}),
 		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
+		option.AddResponse(http.StatusConflict, "Operation already in progress", fuego.Response{Type: fuego.HTTPError{}}),
 		bearer,
 	)
 	fuego.PostStd(ops, "/build", rs.build,
 		option.Summary("Build images"),
-		option.OverrideDescription(ndjsonDesc),
+		option.Description("Builds Docker images. Returns an operation that can be tracked via the operations API."),
 		option.Tags("Projects"),
 		option.OperationID("build"),
 		option.RequestBody(fuego.RequestBody{Type: dto.BuildRequest{}}),
-		option.AddResponse(http.StatusOK, "NDJSON progress stream", fuego.Response{Type: dto.StreamLine{}}),
+		option.DefaultStatusCode(http.StatusAccepted),
+		option.AddResponse(http.StatusAccepted, "Operation accepted", fuego.Response{Type: dto.OperationResponse{}}),
 		option.AddResponse(http.StatusBadRequest, "Invalid request body", fuego.Response{Type: fuego.HTTPError{}}),
 		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
+		option.AddResponse(http.StatusConflict, "Operation already in progress", fuego.Response{Type: fuego.HTTPError{}}),
 		bearer,
 	)
 	fuego.PostStd(ops, "/clean", rs.clean,
 		option.Summary("Clean resources"),
-		option.OverrideDescription(ndjsonDesc),
+		option.Description("Cleans Docker resources. Returns an operation that can be tracked via the operations API."),
 		option.Tags("Projects"),
 		option.OperationID("clean"),
 		option.RequestBody(fuego.RequestBody{Type: dto.CleanRequest{}}),
-		option.AddResponse(http.StatusOK, "NDJSON progress stream", fuego.Response{Type: dto.StreamLine{}}),
+		option.DefaultStatusCode(http.StatusAccepted),
+		option.AddResponse(http.StatusAccepted, "Operation accepted", fuego.Response{Type: dto.OperationResponse{}}),
 		option.AddResponse(http.StatusBadRequest, "Invalid request body", fuego.Response{Type: fuego.HTTPError{}}),
 		option.AddResponse(http.StatusNotFound, "Project not found", fuego.Response{Type: fuego.HTTPError{}}),
+		option.AddResponse(http.StatusConflict, "Operation already in progress", fuego.Response{Type: fuego.HTTPError{}}),
 		bearer,
 	)
 	fuego.GetStd(ops, "/console", rs.console,
@@ -338,30 +350,18 @@ func (rs ProjectResource) remove(w http.ResponseWriter, r *http.Request) {
 
 func (rs ProjectResource) update(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	if _, err := rs.PM.Resolve(name); err != nil {
-		errs.Write(w, http.StatusNotFound, "project not found")
-		return
-	}
-
-	streamOperation(w, rs.LogLevel, rs.Logger, func(logger *slog.Logger) error {
-		if err := rs.PM.Pull(r.Context(), name); err != nil {
-			return fmt.Errorf("pulling %s: %w", name, err)
-		}
-		logger.Info("pulled latest changes", "project", name)
-		if err := rs.PM.Up(r.Context(), name, project.UpOptions{}, logger); err != nil {
-			return err
-		}
-		rs.PM.RestartProjectPoll(name)
-		return nil
-	})
-}
-
-func (rs ProjectResource) resolveProject(r *http.Request) (string, error) {
-	name := r.PathValue("name")
-	if _, err := rs.PM.Resolve(name); err != nil {
-		return "", err
-	}
-	return name, nil
+	submitOperation(w, rs.PM, rs.Store, rs.Logger, rs.LogLevel, name, operation.ActionUpdate, "",
+		func(ctx context.Context, logger *slog.Logger) error {
+			if err := rs.PM.Pull(ctx, name); err != nil {
+				return fmt.Errorf("pulling %s: %w", name, err)
+			}
+			logger.Info("pulled latest changes", "project", name)
+			if err := rs.PM.Up(ctx, name, project.UpOptions{}, logger); err != nil {
+				return err
+			}
+			rs.PM.RestartProjectPoll(name)
+			return nil
+		})
 }
 
 func (rs ProjectResource) status(c fuego.ContextNoBody) (dto.StatusResponse, error) {
@@ -391,18 +391,6 @@ func decodeBody[T any](r *http.Request) (T, error) {
 	return body, nil
 }
 
-func (rs ProjectResource) resolveAndStream(w http.ResponseWriter, r *http.Request, fn func(name string, logger *slog.Logger) error) {
-	name, err := rs.resolveProject(r)
-	if err != nil {
-		errs.Write(w, http.StatusNotFound, "project not found")
-		return
-	}
-
-	streamOperation(w, rs.LogLevel, rs.Logger, func(logger *slog.Logger) error {
-		return fn(name, logger)
-	})
-}
-
 func (rs ProjectResource) up(w http.ResponseWriter, r *http.Request) {
 	body, err := decodeBody[dto.UpRequest](r)
 	if err != nil {
@@ -410,18 +398,22 @@ func (rs ProjectResource) up(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rs.resolveAndStream(w, r, func(name string, logger *slog.Logger) error {
-		return rs.PM.Up(r.Context(), name, project.UpOptions{
-			NoCache: body.NoCache,
-			Force:   body.Force,
-		}, logger)
-	})
+	name := r.PathValue("name")
+	submitOperation(w, rs.PM, rs.Store, rs.Logger, rs.LogLevel, name, operation.ActionUp, "",
+		func(ctx context.Context, logger *slog.Logger) error {
+			return rs.PM.Up(ctx, name, project.UpOptions{
+				NoCache: body.NoCache,
+				Force:   body.Force,
+			}, logger)
+		})
 }
 
 func (rs ProjectResource) down(w http.ResponseWriter, r *http.Request) {
-	rs.resolveAndStream(w, r, func(name string, logger *slog.Logger) error {
-		return rs.PM.Down(r.Context(), name, logger)
-	})
+	name := r.PathValue("name")
+	submitOperation(w, rs.PM, rs.Store, rs.Logger, rs.LogLevel, name, operation.ActionDown, "",
+		func(ctx context.Context, logger *slog.Logger) error {
+			return rs.PM.Down(ctx, name, logger)
+		})
 }
 
 func (rs ProjectResource) build(w http.ResponseWriter, r *http.Request) {
@@ -431,9 +423,11 @@ func (rs ProjectResource) build(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rs.resolveAndStream(w, r, func(name string, logger *slog.Logger) error {
-		return rs.PM.Build(r.Context(), name, body.NoCache, logger)
-	})
+	name := r.PathValue("name")
+	submitOperation(w, rs.PM, rs.Store, rs.Logger, rs.LogLevel, name, operation.ActionBuild, "",
+		func(ctx context.Context, logger *slog.Logger) error {
+			return rs.PM.Build(ctx, name, body.NoCache, logger)
+		})
 }
 
 func (rs ProjectResource) clean(w http.ResponseWriter, r *http.Request) {
@@ -462,9 +456,11 @@ func (rs ProjectResource) clean(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rs.resolveAndStream(w, r, func(name string, logger *slog.Logger) error {
-		return rs.PM.Clean(r.Context(), name, target, logger)
-	})
+	name := r.PathValue("name")
+	submitOperation(w, rs.PM, rs.Store, rs.Logger, rs.LogLevel, name, operation.ActionClean, "",
+		func(ctx context.Context, logger *slog.Logger) error {
+			return rs.PM.Clean(ctx, name, target, logger)
+		})
 }
 
 func (rs ProjectResource) console(w http.ResponseWriter, r *http.Request) {

@@ -2,9 +2,11 @@ package project
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"time"
 
+	"github.com/oreforge/ore/internal/operation"
 	"github.com/oreforge/ore/internal/spec"
 )
 
@@ -118,24 +120,15 @@ func (m *Manager) poll(ctx context.Context, name string, interval time.Duration,
 	}
 }
 
-func (m *Manager) TriggerDeploy(name string, opts UpOptions) bool {
-	if !m.acquireDeploy(name) {
-		return false
+func (m *Manager) TriggerDeploy(name string, opts UpOptions) (string, error) {
+	op, err := m.opStore.Submit(name, operation.ActionDeploy, "", slog.LevelInfo, m.logger,
+		func(ctx context.Context, logger *slog.Logger) error {
+			return m.Deploy(ctx, name, opts)
+		})
+	if err != nil {
+		return "", err
 	}
-	ctx := context.Background()
-	if m.pollCtx != nil {
-		ctx = m.pollCtx
-	}
-	go func() {
-		defer m.releaseDeploy(name)
-		if err := m.Deploy(ctx, name, opts); err != nil {
-			if ctx.Err() != nil {
-				return
-			}
-			m.logger.Error("triggered deploy failed", "project", name, "error", err)
-		}
-	}()
-	return true
+	return op.ID, nil
 }
 
 func (m *Manager) syncDeploy(ctx context.Context, name string) {
@@ -154,34 +147,12 @@ func (m *Manager) syncDeploy(ctx context.Context, name string) {
 		return
 	}
 
-	if !m.acquireDeploy(name) {
-		return
-	}
-	defer m.releaseDeploy(name)
-
-	if err := m.Deploy(ctx, name, UpOptions{}); err != nil {
+	if _, triggerErr := m.TriggerDeploy(name, UpOptions{}); triggerErr != nil {
 		if ctx.Err() != nil {
 			return
 		}
-		logger.Error("gitops deploy failed", "error", err)
+		logger.Warn("gitops deploy skipped", "error", triggerErr)
 	}
-}
-
-func (m *Manager) acquireDeploy(name string) bool {
-	m.deployMu.Lock()
-	defer m.deployMu.Unlock()
-	if m.deploying[name] {
-		m.logger.Warn("deploy already in progress, skipping", "project", name)
-		return false
-	}
-	m.deploying[name] = true
-	return true
-}
-
-func (m *Manager) releaseDeploy(name string) {
-	m.deployMu.Lock()
-	delete(m.deploying, name)
-	m.deployMu.Unlock()
 }
 
 func (m *Manager) Shutdown(ctx context.Context) {

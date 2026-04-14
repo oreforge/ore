@@ -89,7 +89,10 @@ func (c *Client) Up(ctx context.Context, opts project.UpOptions) error {
 	if err := c.requireProject(); err != nil {
 		return err
 	}
-	body, _ := json.Marshal(map[string]any{"no_cache": opts.NoCache, "force": opts.Force})
+	body, err := json.Marshal(upRequest{NoCache: opts.NoCache, Force: opts.Force})
+	if err != nil {
+		return fmt.Errorf("encoding up request: %w", err)
+	}
 	return c.streamRequest(ctx, "POST", c.projectPath()+"/up", body)
 }
 
@@ -104,7 +107,10 @@ func (c *Client) Build(ctx context.Context, noCache bool) error {
 	if err := c.requireProject(); err != nil {
 		return err
 	}
-	body, _ := json.Marshal(map[string]any{"no_cache": noCache})
+	body, err := json.Marshal(buildRequest{NoCache: noCache})
+	if err != nil {
+		return fmt.Errorf("encoding build request: %w", err)
+	}
 	return c.streamRequest(ctx, "POST", c.projectPath()+"/build", body)
 }
 
@@ -138,8 +144,24 @@ func (c *Client) Clean(ctx context.Context, target project.CleanTarget) error {
 	if err := c.requireProject(); err != nil {
 		return err
 	}
-	body, _ := json.Marshal(map[string]any{"target": target.String()})
+	body, err := json.Marshal(cleanRequest{Target: target.String()})
+	if err != nil {
+		return fmt.Errorf("encoding clean request: %w", err)
+	}
 	return c.streamRequest(ctx, "POST", c.projectPath()+"/clean", body)
+}
+
+type upRequest struct {
+	NoCache bool `json:"no_cache,omitempty"`
+	Force   bool `json:"force,omitempty"`
+}
+
+type buildRequest struct {
+	NoCache bool `json:"no_cache,omitempty"`
+}
+
+type cleanRequest struct {
+	Target string `json:"target,omitempty"`
 }
 
 func (c *Client) Console(ctx context.Context, serverName string) error {
@@ -237,6 +259,35 @@ func (c *Client) streamRequest(ctx context.Context, method, path string, body []
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("%s request: %w", path, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode == http.StatusAccepted {
+		var opResp struct {
+			ID string `json:"id"`
+		}
+		if decodeErr := json.NewDecoder(resp.Body).Decode(&opResp); decodeErr != nil {
+			return fmt.Errorf("decoding operation response: %w", decodeErr)
+		}
+		return c.streamOperationLogs(ctx, opResp.ID)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return c.readError(resp)
+	}
+
+	return drainNDJSON(resp.Body)
+}
+
+func (c *Client) streamOperationLogs(ctx context.Context, opID string) error {
+	req, err := c.newRequest(ctx, "GET", "/api/operations/"+opID+"/logs", nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("streaming operation logs: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 

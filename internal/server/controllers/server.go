@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 
@@ -8,13 +9,14 @@ import (
 	"github.com/go-fuego/fuego"
 	"github.com/go-fuego/fuego/option"
 
+	"github.com/oreforge/ore/internal/operation"
 	"github.com/oreforge/ore/internal/project"
 	"github.com/oreforge/ore/internal/server/dto"
-	"github.com/oreforge/ore/internal/server/errs"
 )
 
 type ServerResource struct {
 	PM       *project.Manager
+	Store    *operation.Store
 	LogLevel slog.Level
 	Logger   *slog.Logger
 }
@@ -42,34 +44,38 @@ func (rs ServerResource) MountRoutes(s *fuego.Server) {
 
 	fuego.PostStd(servers, "/{server}/start", rs.start,
 		option.Summary("Start a server"),
-		option.OverrideDescription(ndjsonDesc),
+		option.Description("Starts a server. Returns an operation that can be tracked via the operations API."),
 		option.Tags("Servers"),
 		option.OperationID("startServer"),
 		option.Path("server", "Server or service name"),
-		option.AddResponse(http.StatusOK, "NDJSON progress stream", fuego.Response{Type: dto.StreamLine{}}),
+		option.DefaultStatusCode(http.StatusAccepted),
+		option.AddResponse(http.StatusAccepted, "Operation accepted", fuego.Response{Type: dto.OperationResponse{}}),
 		option.AddResponse(http.StatusNotFound, "Server not found", fuego.Response{Type: fuego.HTTPError{}}),
-		option.AddResponse(http.StatusConflict, "Server not deployed yet", fuego.Response{Type: fuego.HTTPError{}}),
+		option.AddResponse(http.StatusConflict, "Operation already in progress", fuego.Response{Type: fuego.HTTPError{}}),
 		bearer,
 	)
 	fuego.PostStd(servers, "/{server}/stop", rs.stop,
 		option.Summary("Stop a server"),
-		option.OverrideDescription(ndjsonDesc),
+		option.Description("Stops a server. Returns an operation that can be tracked via the operations API."),
 		option.Tags("Servers"),
 		option.OperationID("stopServer"),
 		option.Path("server", "Server or service name"),
-		option.AddResponse(http.StatusOK, "NDJSON progress stream", fuego.Response{Type: dto.StreamLine{}}),
+		option.DefaultStatusCode(http.StatusAccepted),
+		option.AddResponse(http.StatusAccepted, "Operation accepted", fuego.Response{Type: dto.OperationResponse{}}),
 		option.AddResponse(http.StatusNotFound, "Server not found", fuego.Response{Type: fuego.HTTPError{}}),
+		option.AddResponse(http.StatusConflict, "Operation already in progress", fuego.Response{Type: fuego.HTTPError{}}),
 		bearer,
 	)
 	fuego.PostStd(servers, "/{server}/restart", rs.restart,
 		option.Summary("Restart a server"),
-		option.OverrideDescription(ndjsonDesc),
+		option.Description("Restarts a server. Returns an operation that can be tracked via the operations API."),
 		option.Tags("Servers"),
 		option.OperationID("restartServer"),
 		option.Path("server", "Server or service name"),
-		option.AddResponse(http.StatusOK, "NDJSON progress stream", fuego.Response{Type: dto.StreamLine{}}),
+		option.DefaultStatusCode(http.StatusAccepted),
+		option.AddResponse(http.StatusAccepted, "Operation accepted", fuego.Response{Type: dto.OperationResponse{}}),
 		option.AddResponse(http.StatusNotFound, "Server not found", fuego.Response{Type: fuego.HTTPError{}}),
-		option.AddResponse(http.StatusConflict, "Server not deployed yet", fuego.Response{Type: fuego.HTTPError{}}),
+		option.AddResponse(http.StatusConflict, "Operation already in progress", fuego.Response{Type: fuego.HTTPError{}}),
 		bearer,
 	)
 }
@@ -108,44 +114,23 @@ func (rs ServerResource) get(c fuego.ContextNoBody) (dto.ServerStatusResponse, e
 	return *status, nil
 }
 
-func (rs ServerResource) start(w http.ResponseWriter, r *http.Request) {
+func (rs ServerResource) submit(w http.ResponseWriter, r *http.Request, action string, fn func(ctx context.Context, name, serverName string, logger *slog.Logger) error) {
 	name := r.PathValue("name")
 	serverName := r.PathValue("server")
+	submitOperation(w, rs.PM, rs.Store, rs.Logger, rs.LogLevel, name, action, serverName,
+		func(ctx context.Context, logger *slog.Logger) error {
+			return fn(ctx, name, serverName, logger)
+		})
+}
 
-	if _, err := rs.PM.Resolve(name); err != nil {
-		errs.Write(w, http.StatusNotFound, "project not found")
-		return
-	}
-
-	streamOperation(w, rs.LogLevel, rs.Logger, func(logger *slog.Logger) error {
-		return rs.PM.StartServer(r.Context(), name, serverName, logger)
-	})
+func (rs ServerResource) start(w http.ResponseWriter, r *http.Request) {
+	rs.submit(w, r, operation.ActionStart, rs.PM.StartServer)
 }
 
 func (rs ServerResource) stop(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
-	serverName := r.PathValue("server")
-
-	if _, err := rs.PM.Resolve(name); err != nil {
-		errs.Write(w, http.StatusNotFound, "project not found")
-		return
-	}
-
-	streamOperation(w, rs.LogLevel, rs.Logger, func(logger *slog.Logger) error {
-		return rs.PM.StopServer(r.Context(), name, serverName, logger)
-	})
+	rs.submit(w, r, operation.ActionStop, rs.PM.StopServer)
 }
 
 func (rs ServerResource) restart(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
-	serverName := r.PathValue("server")
-
-	if _, err := rs.PM.Resolve(name); err != nil {
-		errs.Write(w, http.StatusNotFound, "project not found")
-		return
-	}
-
-	streamOperation(w, rs.LogLevel, rs.Logger, func(logger *slog.Logger) error {
-		return rs.PM.RestartServer(r.Context(), name, serverName, logger)
-	})
+	rs.submit(w, r, operation.ActionRestart, rs.PM.RestartServer)
 }

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/oreforge/ore/internal/operation"
 )
 
 const (
@@ -26,22 +28,28 @@ type Manager struct {
 	projectsDir string
 	bindMounts  bool
 	logger      *slog.Logger
+	opStore     *operation.Store
 	pollCtx     context.Context
 	pollCancel  context.CancelFunc
 	pollMu      sync.Mutex
 	polls       map[string]pollEntry
-	deployMu    sync.Mutex
-	deploying   map[string]bool
 }
 
-func NewManager(projectsDir string, bindMounts bool, logger *slog.Logger) *Manager {
+func NewManager(projectsDir string, bindMounts bool, logger *slog.Logger, opStore *operation.Store) *Manager {
 	return &Manager{
 		projectsDir: projectsDir,
 		bindMounts:  bindMounts,
 		logger:      logger,
+		opStore:     opStore,
 		polls:       make(map[string]pollEntry),
-		deploying:   make(map[string]bool),
 	}
+}
+
+func (m *Manager) ActiveOperation(name string) (*operation.Operation, bool) {
+	if m.opStore == nil {
+		return nil, false
+	}
+	return m.opStore.ActiveForProject(name)
 }
 
 func (m *Manager) ProjectsDir() string {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/oreforge/ore/internal/config"
 	"github.com/oreforge/ore/internal/docker"
+	"github.com/oreforge/ore/internal/operation"
 	"github.com/oreforge/ore/internal/project"
 	"github.com/oreforge/ore/internal/server/controllers"
 	mw "github.com/oreforge/ore/internal/server/middleware"
@@ -25,7 +26,7 @@ type BuildInfo struct {
 	BuildDate string
 }
 
-func New(pm *project.Manager, token string, logger *slog.Logger, logLevel slog.Level, dockerClient docker.Client, addr string, version string) *fuego.Server {
+func New(pm *project.Manager, opStore *operation.Store, token string, logger *slog.Logger, logLevel slog.Level, dockerClient docker.Client, addr string, version string) *fuego.Server {
 	if strings.HasPrefix(addr, ":") {
 		addr = "0.0.0.0" + addr
 	}
@@ -71,11 +72,13 @@ func New(pm *project.Manager, token string, logger *slog.Logger, logLevel slog.L
 	if token != "" {
 		fuego.Use(authed, mw.BearerAuth(token))
 	}
-	projectRes := controllers.ProjectResource{PM: pm, DockerClient: dockerClient, LogLevel: logLevel, Logger: logger, Token: token}
+	projectRes := controllers.ProjectResource{PM: pm, Store: opStore, DockerClient: dockerClient, LogLevel: logLevel, Logger: logger, Token: token}
 	ops := projectRes.MountRoutes(authed)
 
-	controllers.ServerResource{PM: pm, LogLevel: logLevel, Logger: logger}.MountRoutes(ops)
-	controllers.ServiceResource{PM: pm, LogLevel: logLevel, Logger: logger}.MountRoutes(ops)
+	controllers.ServerResource{PM: pm, Store: opStore, LogLevel: logLevel, Logger: logger}.MountRoutes(ops)
+	controllers.ServiceResource{PM: pm, Store: opStore, LogLevel: logLevel, Logger: logger}.MountRoutes(ops)
+
+	controllers.OperationResource{Store: opStore, Logger: logger, LogLevel: logLevel}.MountRoutes(authed)
 
 	webhookGroup := fuego.Group(api, "/webhook")
 	fuego.Use(webhookGroup, mw.CORS())
@@ -129,9 +132,10 @@ func Run(_ []string, info BuildInfo) int {
 	}
 	defer func() { _ = dockerClient.Close() }()
 
-	pm := project.NewManager(cfg.Projects, cfg.BindMounts, logger)
+	opStore := operation.NewStore(logger)
+	pm := project.NewManager(cfg.Projects, cfg.BindMounts, logger, opStore)
 
-	s := New(pm, cfg.Token, logger, level, dockerClient, cfg.Addr, info.Version)
+	s := New(pm, opStore, cfg.Token, logger, level, dockerClient, cfg.Addr, info.Version)
 
 	pm.StartPolling()
 
@@ -164,6 +168,7 @@ func Run(_ []string, info BuildInfo) int {
 	defer cancel()
 
 	pm.StopPolling()
+	opStore.Stop()
 
 	if err := s.Shutdown(ctx); err != nil {
 		logger.Error("shutdown error", "error", err)
