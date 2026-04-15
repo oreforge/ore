@@ -435,7 +435,13 @@ func (s *Service) Verify(ctx context.Context, id string) (*VerifyResult, error) 
 	}
 	defer func() { _ = rc.Close() }()
 
-	sum, size, err := hashAndCount(rc)
+	dr, err := NewArchiveReader(rc)
+	if err != nil {
+		return nil, fmt.Errorf("opening archive reader: %w", err)
+	}
+	defer func() { _ = dr.Close() }()
+
+	sum, size, err := hashAndCount(dr)
 	if err != nil {
 		return nil, err
 	}
