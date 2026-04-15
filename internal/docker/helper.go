@@ -211,38 +211,100 @@ func RunHelperWithStdin(ctx context.Context, d Client, logger *slog.Logger, spec
 
 	statusCh, errCh := d.ContainerWait(ctx, id, container.WaitConditionNotRunning)
 
+	copyCtx, cancelCopy := context.WithCancel(ctx)
+	defer cancelCopy()
+
 	copyDone := make(chan error, 1)
 	go func() {
-		_, copyErr := io.Copy(attach.Conn, stdin)
+		_, copyErr := io.Copy(attach.Conn, readerWithContext{ctx: copyCtx, r: stdin})
 		_ = attach.CloseWrite()
 		copyDone <- copyErr
 	}()
 
 	stderrBuf := &strings.Builder{}
+	var stderrMu sync.Mutex
+	stderrDone := make(chan struct{})
 	go func() {
-		_, _ = stdcopy.StdCopy(io.Discard, &stringBuilderWriter{stderrBuf}, attach.Reader)
+		_, _ = stdcopy.StdCopy(io.Discard, &lockedWriter{mu: &stderrMu, w: stderrBuf}, attach.Reader)
+		close(stderrDone)
 	}()
 
-	if err := <-copyDone; err != nil {
-		return fmt.Errorf("writing to helper stdin: %w", err)
-	}
+	var copyErr error
+	var waitErr error
+	var waitStatus *container.WaitResponse
 
 	select {
 	case <-ctx.Done():
+		cancelCopy()
+		attach.Close()
+		<-copyDone
+		<-stderrDone
 		return ctx.Err()
+	case copyErr = <-copyDone:
 	case err := <-errCh:
-		if err != nil {
-			return fmt.Errorf("waiting for helper: %w", err)
-		}
+		waitErr = err
 	case st := <-statusCh:
-		if st.Error != nil && st.Error.Message != "" {
-			return errors.New(st.Error.Message)
-		}
-		if st.StatusCode != 0 {
-			return fmt.Errorf("helper exited with code %d: %s", st.StatusCode, strings.TrimSpace(stderrBuf.String()))
+		waitStatus = &st
+	}
+
+	if waitErr == nil && waitStatus == nil {
+		select {
+		case <-ctx.Done():
+			cancelCopy()
+			attach.Close()
+			<-stderrDone
+			return ctx.Err()
+		case err := <-errCh:
+			waitErr = err
+		case st := <-statusCh:
+			waitStatus = &st
 		}
 	}
+
+	attach.Close()
+	<-stderrDone
+
+	if waitErr != nil {
+		return fmt.Errorf("waiting for helper: %w", waitErr)
+	}
+	if waitStatus != nil {
+		if waitStatus.Error != nil && waitStatus.Error.Message != "" {
+			return errors.New(waitStatus.Error.Message)
+		}
+		if waitStatus.StatusCode != 0 {
+			stderrMu.Lock()
+			msg := strings.TrimSpace(stderrBuf.String())
+			stderrMu.Unlock()
+			return fmt.Errorf("helper exited with code %d: %s", waitStatus.StatusCode, msg)
+		}
+	}
+	if copyErr != nil && !errors.Is(copyErr, context.Canceled) && !errors.Is(copyErr, io.ErrClosedPipe) {
+		return fmt.Errorf("writing to helper stdin: %w", copyErr)
+	}
 	return nil
+}
+
+type readerWithContext struct {
+	ctx context.Context
+	r   io.Reader
+}
+
+func (r readerWithContext) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.r.Read(p)
+}
+
+type lockedWriter struct {
+	mu *sync.Mutex
+	w  io.Writer
+}
+
+func (l *lockedWriter) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.w.Write(p)
 }
 
 func StartHelperStream(ctx context.Context, d Client, logger *slog.Logger, spec HelperSpec) (*HelperStream, error) {

@@ -79,6 +79,9 @@ type Service struct {
 
 	entropy io.Reader
 	entMu   sync.Mutex
+
+	volMu   sync.Mutex
+	volLock map[string]*sync.Mutex
 }
 
 type Options struct {
@@ -101,7 +104,21 @@ func NewService(opts Options) *Service {
 		snapshotter: opts.Snapshotter,
 		log:         logger,
 		entropy:     ulid.Monotonic(cryptorand.Reader, 0),
+		volLock:     make(map[string]*sync.Mutex),
 	}
+}
+
+func (s *Service) lockVolume(project, volume string) func() {
+	key := project + "/" + volume
+	s.volMu.Lock()
+	m, ok := s.volLock[key]
+	if !ok {
+		m = &sync.Mutex{}
+		s.volLock[key] = m
+	}
+	s.volMu.Unlock()
+	m.Lock()
+	return m.Unlock
 }
 
 func NewLocalService(root string, vs *volumes.Service, snap Snapshotter, logger *slog.Logger) (*Service, error) {
@@ -144,6 +161,13 @@ func (s *Service) Create(ctx context.Context, logger *slog.Logger, opts CreateOp
 		return nil, fmt.Errorf("volume %s does not belong to project %s", opts.Volume, opts.Project)
 	}
 
+	unlock := s.lockVolume(opts.Project, vol.Name)
+	defer unlock()
+
+	return s.createLocked(ctx, logger, opts, vol)
+}
+
+func (s *Service) createLocked(ctx context.Context, logger *slog.Logger, opts CreateOptions, vol volumes.Volume) (*Backup, error) {
 	now := time.Now().UTC()
 	kind := opts.Kind
 	if kind == "" {
@@ -316,14 +340,17 @@ func (s *Service) Restore(ctx context.Context, logger *slog.Logger, id string, o
 		return fmt.Errorf("target volume %s is in project %s, expected %s", vol.Name, vol.Project, b.Project)
 	}
 
+	unlock := s.lockVolume(b.Project, vol.Name)
+	defer unlock()
+
 	if opts.KeepPreRestore {
 		logger.Info("taking pre-restore safety snapshot", "volume", vol.Name)
-		if _, preErr := s.Create(ctx, logger, CreateOptions{
+		if _, preErr := s.createLocked(ctx, logger, CreateOptions{
 			Project: b.Project,
 			Volume:  b.Volume,
 			Kind:    KindPreRestore,
 			Tags:    []string{"pre-restore", id},
-		}); preErr != nil {
+		}, vol); preErr != nil {
 			return fmt.Errorf("pre-restore snapshot failed: %w", preErr)
 		}
 	}
