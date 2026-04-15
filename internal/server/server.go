@@ -78,7 +78,7 @@ func New(pm *project.Manager, opStore *operation.Store, token string, logger *sl
 	ops := projectRes.MountRoutes(authed)
 
 	volSvc := volumes.New(dockerClient, logger)
-	backupSvc, err := backup.NewLocalService(backupsDir, volSvc, backup.NewHelperSnapshotter(dockerClient), logger)
+	backupSvc, err := backup.NewLocalService(backupsDir, volSvc, backup.NewHelperSnapshotter(dockerClient), dockerClient, logger)
 	if err != nil {
 		return nil, err
 	}

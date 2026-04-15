@@ -124,5 +124,9 @@ func (a *atomicFile) commit() (os.FileInfo, error) {
 		_ = os.Remove(a.tmpPath)
 		return nil, err
 	}
+	if dir, dirErr := os.Open(filepath.Dir(a.finalPath)); dirErr == nil {
+		_ = dir.Sync()
+		_ = dir.Close()
+	}
 	return os.Stat(a.finalPath)
 }

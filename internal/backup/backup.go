@@ -10,11 +10,15 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
 	"github.com/oklog/ulid"
 
+	"github.com/oreforge/ore/internal/docker"
 	"github.com/oreforge/ore/internal/volumes"
 )
 
@@ -60,9 +64,23 @@ type StorageRef struct {
 }
 
 var (
-	ErrNotFound = errors.New("backup not found")
-	ErrConflict = errors.New("backup already exists")
+	ErrNotFound       = errors.New("backup not found")
+	ErrConflict       = errors.New("backup already exists")
+	ErrVolumeInUse    = errors.New("volume is in use by running containers")
+	ErrCorruptArchive = errors.New("archive integrity check failed")
 )
+
+type VolumeInUseError struct {
+	Volume     string
+	Containers []string
+}
+
+func (e *VolumeInUseError) Error() string {
+	return fmt.Sprintf("volume %q is in use by running containers: %s. Bring the project down before restoring.",
+		e.Volume, strings.Join(e.Containers, ", "))
+}
+
+func (e *VolumeInUseError) Unwrap() error { return ErrVolumeInUse }
 
 type Filter struct {
 	Project string
@@ -75,6 +93,7 @@ type Service struct {
 	index       Index
 	backend     Backend
 	snapshotter Snapshotter
+	docker      docker.Client
 	log         *slog.Logger
 
 	entropy io.Reader
@@ -89,6 +108,7 @@ type Options struct {
 	Index       Index
 	Backend     Backend
 	Snapshotter Snapshotter
+	Docker      docker.Client
 	Logger      *slog.Logger
 }
 
@@ -102,6 +122,7 @@ func NewService(opts Options) *Service {
 		index:       opts.Index,
 		backend:     opts.Backend,
 		snapshotter: opts.Snapshotter,
+		docker:      opts.Docker,
 		log:         logger,
 		entropy:     ulid.Monotonic(cryptorand.Reader, 0),
 		volLock:     make(map[string]*sync.Mutex),
@@ -121,7 +142,105 @@ func (s *Service) lockVolume(project, volume string) func() {
 	return m.Unlock
 }
 
-func NewLocalService(root string, vs *volumes.Service, snap Snapshotter, logger *slog.Logger) (*Service, error) {
+type runningContainer struct {
+	id   string
+	name string
+}
+
+func (s *Service) runningContainersForVolume(ctx context.Context, volumeName string) ([]runningContainer, error) {
+	if s.docker == nil {
+		return nil, nil
+	}
+	args := filters.NewArgs()
+	args.Add("volume", volumeName)
+	containers, err := s.docker.ContainerList(ctx, container.ListOptions{All: true, Filters: args})
+	if err != nil {
+		return nil, fmt.Errorf("listing containers for volume %s: %w", volumeName, err)
+	}
+	out := make([]runningContainer, 0, len(containers))
+	for _, c := range containers {
+		if c.State != "running" {
+			continue
+		}
+		name := c.ID
+		if len(c.Names) > 0 {
+			name = strings.TrimPrefix(c.Names[0], "/")
+		}
+		out = append(out, runningContainer{id: c.ID, name: name})
+	}
+	return out, nil
+}
+
+func (s *Service) quiesceVolume(ctx context.Context, volumeName string, logger *slog.Logger) (func(), error) {
+	running, err := s.runningContainersForVolume(ctx, volumeName)
+	if err != nil {
+		return func() {}, err
+	}
+	if len(running) == 0 {
+		return func() {}, nil
+	}
+	paused := make([]runningContainer, 0, len(running))
+	for _, c := range running {
+		if err := s.docker.ContainerPause(ctx, c.id); err != nil {
+			for i := len(paused) - 1; i >= 0; i-- {
+				if unpauseErr := s.docker.ContainerUnpause(context.Background(), paused[i].id); unpauseErr != nil {
+					logger.Warn("failed to unpause container after quiesce error", "container", paused[i].name, "error", unpauseErr)
+				}
+			}
+			return func() {}, fmt.Errorf("pausing container %s: %w", c.name, err)
+		}
+		paused = append(paused, c)
+		logger.Info("paused container for consistent backup", "container", c.name)
+	}
+	resume := func() {
+		for i := len(paused) - 1; i >= 0; i-- {
+			if err := s.docker.ContainerUnpause(context.Background(), paused[i].id); err != nil {
+				logger.Warn("failed to unpause container after backup", "container", paused[i].name, "error", err)
+				continue
+			}
+			logger.Info("unpaused container after backup", "container", paused[i].name)
+		}
+	}
+	return resume, nil
+}
+
+func (s *Service) assertVolumeIdle(ctx context.Context, volumeName string) error {
+	running, err := s.runningContainersForVolume(ctx, volumeName)
+	if err != nil {
+		return err
+	}
+	if len(running) == 0 {
+		return nil
+	}
+	names := make([]string, len(running))
+	for i, c := range running {
+		names[i] = c.name
+	}
+	return &VolumeInUseError{Volume: volumeName, Containers: names}
+}
+
+func (s *Service) verifyArchive(ctx context.Context, b *Backup) error {
+	rc, err := s.backend.Get(ctx, archiveKey(b))
+	if err != nil {
+		return fmt.Errorf("opening archive for verification: %w", err)
+	}
+	defer func() { _ = rc.Close() }()
+	dr, err := NewArchiveReader(rc)
+	if err != nil {
+		return fmt.Errorf("opening archive reader: %w", err)
+	}
+	defer func() { _ = dr.Close() }()
+	sum, _, err := hashAndCount(dr)
+	if err != nil {
+		return fmt.Errorf("hashing archive: %w", err)
+	}
+	if sum != b.Checksum {
+		return fmt.Errorf("%w: expected %s, got %s", ErrCorruptArchive, b.Checksum, sum)
+	}
+	return nil
+}
+
+func NewLocalService(root string, vs *volumes.Service, snap Snapshotter, d docker.Client, logger *slog.Logger) (*Service, error) {
 	idx, err := NewFSIndex(root)
 	if err != nil {
 		return nil, err
@@ -135,6 +254,7 @@ func NewLocalService(root string, vs *volumes.Service, snap Snapshotter, logger 
 		Index:       idx,
 		Backend:     local,
 		Snapshotter: snap,
+		Docker:      d,
 		Logger:      logger,
 	}), nil
 }
@@ -219,6 +339,12 @@ func (s *Service) createLocked(ctx context.Context, logger *slog.Logger, opts Cr
 }
 
 func (s *Service) runSnapshot(ctx context.Context, b *Backup, logger *slog.Logger) error {
+	resume, err := s.quiesceVolume(ctx, b.Volume, logger)
+	if err != nil {
+		return fmt.Errorf("quiescing volume: %w", err)
+	}
+	defer resume()
+
 	stream, err := s.snapshotter.Snapshot(ctx, b.Volume, logger)
 	if err != nil {
 		return err
@@ -263,6 +389,10 @@ func (s *Service) runSnapshot(ctx context.Context, b *Backup, logger *slog.Logge
 	b.SizeBytes = res.RawBytes
 	b.Compressed = res.CompressedBytes
 	b.Checksum = res.Checksum
+	if err := s.verifyArchive(ctx, b); err != nil {
+		_ = s.backend.Delete(context.Background(), archiveKey(b))
+		return err
+	}
 	return nil
 }
 
@@ -342,6 +472,10 @@ func (s *Service) Restore(ctx context.Context, logger *slog.Logger, id string, o
 
 	unlock := s.lockVolume(b.Project, vol.Name)
 	defer unlock()
+
+	if err := s.assertVolumeIdle(ctx, vol.Name); err != nil {
+		return err
+	}
 
 	if opts.KeepPreRestore {
 		logger.Info("taking pre-restore safety snapshot", "volume", vol.Name)

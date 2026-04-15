@@ -139,6 +139,14 @@ func (f *fakeDocker) ContainerStop(ctx context.Context, id string, opts containe
 	panic("unexpected")
 }
 
+func (f *fakeDocker) ContainerPause(ctx context.Context, id string) error {
+	panic("unexpected")
+}
+
+func (f *fakeDocker) ContainerUnpause(ctx context.Context, id string) error {
+	panic("unexpected")
+}
+
 func (f *fakeDocker) ContainerRemove(ctx context.Context, id string, opts container.RemoveOptions) error {
 	panic("unexpected")
 }
