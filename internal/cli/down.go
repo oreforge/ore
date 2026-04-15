@@ -10,7 +10,7 @@ func newDownCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "down",
 		Short:   "Stop and remove all containers",
-		Example: "ore down",
+		Example: `ore down`,
 		Args:    cobra.NoArgs,
 		RunE:    cleanRunE(project.CleanContainers),
 	}

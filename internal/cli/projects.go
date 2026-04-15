@@ -46,7 +46,8 @@ func newProjectsListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "list",
 		Short:   "List remote projects",
-		Example: "ore projects list",
+		Example: `ore projects list`,
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			r, err := connectNode()
 			if err != nil {
@@ -76,7 +77,7 @@ func newProjectsAddCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "add <url>",
 		Short:   "Clone a project from a git repository",
-		Example: "ore projects add https://github.com/user/repo.git",
+		Example: `ore projects add https://github.com/user/repo.git`,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r, err := connectNode()
@@ -105,6 +106,7 @@ func newProjectsRemoveCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:               "remove <name>",
 		Short:             "Stop servers and remove a project",
+		Example:           `ore projects remove my-network`,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeProjectNames,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -128,7 +130,7 @@ func newProjectsUpdateCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:               "update <name>",
 		Short:             "Pull latest changes and redeploy",
-		Example:           "ore projects update my-network",
+		Example:           `ore projects update my-network`,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeProjectNames,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -152,7 +154,7 @@ func newProjectsUseCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:               "use <name>",
 		Short:             "Set the active project",
-		Example:           "ore projects use my-network",
+		Example:           `ore projects use my-network`,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeProjectNames,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -191,7 +193,7 @@ func newProjectsWebhookCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "webhook <name>",
 		Short:             "Show the webhook URL for a project",
-		Example:           "ore projects webhook my-network",
+		Example:           `ore projects webhook my-network`,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeProjectNames,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -245,8 +247,10 @@ func newProjectsWebhookCmd() *cobra.Command {
 
 func newProjectsActiveCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "active",
-		Short: "Show the active project",
+		Use:     "active",
+		Short:   "Show the active project",
+		Example: `ore projects active`,
+		Args:    cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			_, _, project, _ := config.ResolveRemote(cfg)
 			if project == "" {

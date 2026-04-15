@@ -19,15 +19,21 @@ const (
 )
 
 const (
-	ActionUp      = "up"
-	ActionDown    = "down"
-	ActionBuild   = "build"
-	ActionClean   = "clean"
-	ActionUpdate  = "update"
-	ActionStart   = "start"
-	ActionStop    = "stop"
-	ActionRestart = "restart"
-	ActionDeploy  = "deploy"
+	ActionUp            = "up"
+	ActionDown          = "down"
+	ActionBuild         = "build"
+	ActionClean         = "clean"
+	ActionUpdate        = "update"
+	ActionStart         = "start"
+	ActionStop          = "stop"
+	ActionRestart       = "restart"
+	ActionDeploy        = "deploy"
+	ActionVolumeMeasure = "volume.measure"
+	ActionVolumeRemove  = "volume.remove"
+	ActionBackupCreate  = "backup.create"
+	ActionBackupRemove  = "backup.remove"
+	ActionBackupVerify  = "backup.verify"
+	ActionBackupRestore = "backup.restore"
 )
 
 type Operation struct {

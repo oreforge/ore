@@ -228,5 +228,5 @@ func TestParseCPU(t *testing.T) {
 func TestVolumeName(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, "net_container_vol", volumeName("net", "container", "vol"))
+	assert.Equal(t, "net_container_vol", VolumeNameFor("net", "container", "vol"))
 }

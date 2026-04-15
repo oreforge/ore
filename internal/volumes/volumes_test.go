@@ -155,6 +155,14 @@ func (f *fakeDocker) ContainerResize(ctx context.Context, id string, opts contai
 	panic("unexpected")
 }
 
+func (f *fakeDocker) ContainerWait(ctx context.Context, id string, cond container.WaitCondition) (<-chan container.WaitResponse, <-chan error) {
+	panic("unexpected")
+}
+
+func (f *fakeDocker) ContainerLogs(ctx context.Context, id string, opts container.LogsOptions) (io.ReadCloser, error) {
+	panic("unexpected")
+}
+
 func (f *fakeDocker) NetworkCreate(ctx context.Context, name string, opts network.CreateOptions) (network.CreateResponse, error) {
 	panic("unexpected")
 }
@@ -200,11 +208,11 @@ func managed(project, owner, ownerKind, logical string) map[string]string {
 	return map[string]string{
 		deploy.LabelManaged:   "true",
 		deploy.LabelProject:   project,
+		deploy.LabelNetwork:   project,
 		deploy.LabelOwner:     owner,
 		deploy.LabelOwnerKind: ownerKind,
 		deploy.LabelVolume:    logical,
 		deploy.LabelCreatedAt: "2026-04-14T10:00:00Z",
-		deploy.LabelSchema:    deploy.SchemaVersion,
 	}
 }
 

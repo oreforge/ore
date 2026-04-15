@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
@@ -47,11 +49,11 @@ func New(d docker.Client, logger *slog.Logger) *Service {
 	return &Service{docker: d, log: logger}
 }
 
-func (s *Service) List(ctx context.Context, project string) ([]Volume, error) {
+func (s *Service) List(ctx context.Context, networkName string) ([]Volume, error) {
 	args := filters.NewArgs()
 	args.Add("label", deploy.LabelManaged+"=true")
-	if project != "" {
-		args.Add("label", deploy.LabelProject+"="+project)
+	if networkName != "" {
+		args.Add("label", deploy.LabelProject+"="+networkName)
 	}
 
 	resp, err := s.docker.VolumeList(ctx, dockervolume.ListOptions{Filters: args})
@@ -59,7 +61,7 @@ func (s *Service) List(ctx context.Context, project string) ([]Volume, error) {
 		return nil, fmt.Errorf("listing volumes: %w", err)
 	}
 
-	usage, err := s.buildUsageIndex(ctx, project)
+	usage, err := s.buildUsageIndex(ctx, networkName)
 	if err != nil {
 		s.log.Warn("failed to build volume usage index", "error", err)
 		usage = map[string][]string{}
@@ -118,11 +120,11 @@ func (s *Service) inUseBy(ctx context.Context, volumeName string) ([]string, err
 	return out, nil
 }
 
-func (s *Service) buildUsageIndex(ctx context.Context, project string) (map[string][]string, error) {
+func (s *Service) buildUsageIndex(ctx context.Context, networkName string) (map[string][]string, error) {
 	args := filters.NewArgs()
 	args.Add("label", deploy.LabelManaged+"=true")
-	if project != "" {
-		args.Add("label", deploy.LabelProject+"="+project)
+	if networkName != "" {
+		args.Add("label", deploy.LabelNetwork+"="+networkName)
 	}
 
 	containers, err := s.docker.ContainerList(ctx, container.ListOptions{
@@ -156,7 +158,6 @@ func toVolume(v *dockervolume.Volume, inUseBy []string) Volume {
 	if labels == nil {
 		labels = map[string]string{}
 	}
-	created := parseCreatedAt(labels[deploy.LabelCreatedAt], v.CreatedAt)
 	return Volume{
 		Name:       v.Name,
 		Project:    labels[deploy.LabelProject],
@@ -166,7 +167,7 @@ func toVolume(v *dockervolume.Volume, inUseBy []string) Volume {
 		Driver:     v.Driver,
 		Mountpoint: v.Mountpoint,
 		Labels:     labels,
-		CreatedAt:  created,
+		CreatedAt:  parseCreatedAt(labels[deploy.LabelCreatedAt], v.CreatedAt),
 		SizeBytes:  SizeUnknown,
 		InUseBy:    append([]string(nil), inUseBy...),
 	}
@@ -182,6 +183,113 @@ func parseCreatedAt(label, dockerCreated string) time.Time {
 		}
 	}
 	return time.Time{}
+}
+
+var ErrInUse = errors.New("volume is in use")
+
+type PruneReport struct {
+	Project    string           `json:"project"`
+	DryRun     bool             `json:"dryRun"`
+	Candidates []PruneCandidate `json:"candidates"`
+	Deleted    []string         `json:"deleted,omitempty"`
+	Skipped    []PruneSkip      `json:"skipped,omitempty"`
+}
+
+type PruneCandidate struct {
+	Name    string `json:"name"`
+	Owner   string `json:"owner,omitempty"`
+	Logical string `json:"logical,omitempty"`
+}
+
+type PruneSkip struct {
+	Name   string `json:"name"`
+	Reason string `json:"reason"`
+}
+
+func (s *Service) Prune(ctx context.Context, networkName string, declared map[string]struct{}, dryRun bool) (*PruneReport, error) {
+	managed, err := s.List(ctx, networkName)
+	if err != nil {
+		return nil, err
+	}
+
+	report := &PruneReport{Project: networkName, DryRun: dryRun}
+	for _, v := range managed {
+		if _, kept := declared[v.Name]; kept {
+			continue
+		}
+		report.Candidates = append(report.Candidates, PruneCandidate{
+			Name:    v.Name,
+			Owner:   v.Owner,
+			Logical: v.Logical,
+		})
+	}
+
+	if dryRun {
+		return report, nil
+	}
+
+	for _, c := range report.Candidates {
+		if err := s.Remove(ctx, c.Name, false); err != nil {
+			if errors.Is(err, ErrInUse) {
+				report.Skipped = append(report.Skipped, PruneSkip{Name: c.Name, Reason: "in use"})
+				continue
+			}
+			report.Skipped = append(report.Skipped, PruneSkip{Name: c.Name, Reason: err.Error()})
+			continue
+		}
+		report.Deleted = append(report.Deleted, c.Name)
+	}
+	return report, nil
+}
+
+func (s *Service) Remove(ctx context.Context, volumeName string, force bool) error {
+	v, err := s.Inspect(ctx, volumeName)
+	if err != nil {
+		return err
+	}
+
+	if len(v.InUseBy) > 0 {
+		if !force {
+			return fmt.Errorf("%w: %s", ErrInUse, strings.Join(v.InUseBy, ", "))
+		}
+		s.log.Info("force-stopping containers to delete volume", "volume", v.Name, "containers", v.InUseBy)
+		for _, name := range v.InUseBy {
+			if err := deploy.StopContainer(ctx, s.docker, name, s.log); err != nil {
+				return fmt.Errorf("stopping container %s: %w", name, err)
+			}
+		}
+	}
+
+	if err := s.docker.VolumeRemove(ctx, v.Name, force); err != nil {
+		if cerrdefs.IsNotFound(err) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("removing volume %s: %w", v.Name, err)
+	}
+	s.log.Info("volume removed", "volume", v.Name)
+	return nil
+}
+
+func (s *Service) Measure(ctx context.Context, volumeName string) (int64, error) {
+	v, err := s.Inspect(ctx, volumeName)
+	if err != nil {
+		return 0, err
+	}
+
+	res, err := docker.RunHelper(ctx, s.docker, s.log, docker.HelperSpec{
+		Cmd:   []string{"sh", "-c", "du -sb /volume | cut -f1"},
+		Binds: []string{v.Name + ":/volume:ro"},
+	})
+	if err != nil {
+		return 0, fmt.Errorf("measuring volume %s: %w", volumeName, err)
+	}
+
+	out := strings.TrimSpace(string(res.Stdout))
+	size, err := strconv.ParseInt(out, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("parsing du output %q for volume %s: %w", out, volumeName, err)
+	}
+	return size, nil
 }
 
 func containerDisplayName(name, id string) string {

@@ -81,14 +81,14 @@ func (rs ServerResource) MountRoutes(s *fuego.Server) {
 }
 
 func (rs ServerResource) list(c fuego.ContextNoBody) (dto.ServerListResponse, error) {
-	name := c.PathParam("name")
-	if _, err := rs.PM.Resolve(name); err != nil {
+	projectName := c.PathParam("name")
+	if _, err := rs.PM.Resolve(projectName); err != nil {
 		return dto.ServerListResponse{}, fuego.HTTPError{Status: 404, Detail: "project not found"}
 	}
 
-	status, err := rs.PM.Status(c.Context(), name)
+	status, err := rs.PM.Status(c.Context(), projectName)
 	if err != nil {
-		rs.Logger.Error("failed to get server list", "project", name, "error", err)
+		rs.Logger.Error("failed to get server list", "project", projectName, "error", err)
 		return dto.ServerListResponse{}, fuego.HTTPError{Status: 500, Detail: "failed to get server status"}
 	}
 
@@ -99,14 +99,14 @@ func (rs ServerResource) list(c fuego.ContextNoBody) (dto.ServerListResponse, er
 }
 
 func (rs ServerResource) get(c fuego.ContextNoBody) (dto.ServerStatusResponse, error) {
-	name := c.PathParam("name")
+	projectName := c.PathParam("name")
 	serverName := c.PathParam("server")
 
-	if _, err := rs.PM.Resolve(name); err != nil {
+	if _, err := rs.PM.Resolve(projectName); err != nil {
 		return dto.ServerStatusResponse{}, fuego.HTTPError{Status: 404, Detail: "project not found"}
 	}
 
-	status, err := rs.PM.ServerStatus(c.Context(), name, serverName)
+	status, err := rs.PM.ServerStatus(c.Context(), projectName, serverName)
 	if err != nil {
 		return dto.ServerStatusResponse{}, fuego.HTTPError{Status: 404, Detail: "server not found"}
 	}
@@ -114,12 +114,12 @@ func (rs ServerResource) get(c fuego.ContextNoBody) (dto.ServerStatusResponse, e
 	return *status, nil
 }
 
-func (rs ServerResource) submit(w http.ResponseWriter, r *http.Request, action string, fn func(ctx context.Context, name, serverName string, logger *slog.Logger) error) {
-	name := r.PathValue("name")
+func (rs ServerResource) submit(w http.ResponseWriter, r *http.Request, action string, fn func(ctx context.Context, projectName, serverName string, logger *slog.Logger) error) {
+	projectName := r.PathValue("name")
 	serverName := r.PathValue("server")
-	submitOperation(w, rs.PM, rs.Store, rs.Logger, rs.LogLevel, name, action, serverName,
+	submitOperation(w, rs.PM, rs.Store, rs.Logger, rs.LogLevel, projectName, action, serverName,
 		func(ctx context.Context, logger *slog.Logger) error {
-			return fn(ctx, name, serverName, logger)
+			return fn(ctx, projectName, serverName, logger)
 		})
 }
 

@@ -39,8 +39,8 @@ func newNodesListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "list",
 		Short:   "List configured nodes",
-		Example: "ore nodes list",
-
+		Example: `ore nodes list`,
+		Args:    cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			if len(cfg.Nodes) == 0 {
 				fmt.Println("no nodes configured")
@@ -63,9 +63,8 @@ func newNodesAddCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "add <name>",
 		Short:   "Add a remote node",
-		Example: "ore nodes add mynode --addr 192.168.1.10:9090 --token mytoken",
+		Example: `ore nodes add prod --addr 192.168.1.10:9090 --token mytoken`,
 		Args:    cobra.ExactArgs(1),
-
 		RunE: func(cmd *cobra.Command, args []string) error {
 			addr, _ := cmd.Flags().GetString("addr")
 			token, _ := cmd.Flags().GetString("token")
@@ -111,13 +110,13 @@ func newNodesRemoveCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:               "remove <name>",
 		Short:             "Remove a configured node",
+		Example:           `ore nodes remove prod`,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeNodeNames,
 		RunE: func(_ *cobra.Command, args []string) error {
 			if err := config.RemoveNode(args[0]); err != nil {
 				return err
 			}
-
 			fmt.Printf("removed node %q\n", args[0])
 			return nil
 		},
@@ -128,7 +127,7 @@ func newNodesUseCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:               "use <name>",
 		Short:             "Set the active node",
-		Example:           "ore nodes use prod",
+		Example:           `ore nodes use prod`,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeNodeNames,
 		RunE: func(_ *cobra.Command, args []string) error {
@@ -148,9 +147,10 @@ func newNodesUseCmd() *cobra.Command {
 
 func newNodesActiveCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "active",
-		Short: "Show the active node",
-
+		Use:     "active",
+		Short:   "Show the active node",
+		Example: `ore nodes active`,
+		Args:    cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			if cfg.Context == "" {
 				fmt.Println("no active node")
@@ -166,7 +166,7 @@ func newNodesShowCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:               "show <name>",
 		Short:             "Show node details",
-		Example:           "ore nodes show prod",
+		Example:           `ore nodes show prod`,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeNodeNames,
 		RunE: func(_ *cobra.Command, args []string) error {

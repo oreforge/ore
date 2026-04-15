@@ -55,7 +55,7 @@ func newConsoleCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:               "console <server>",
 		Short:             "Attach to a running server console",
-		Example:           "ore console survival",
+		Example:           `ore console survival`,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeServerNames,
 		RunE: func(cmd *cobra.Command, args []string) error {

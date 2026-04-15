@@ -30,7 +30,7 @@ func newCleanAllCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "all",
 		Short:   "Remove all containers, images, volumes, and build artifacts",
-		Example: "ore clean all",
+		Example: `ore clean all`,
 		Args:    cobra.NoArgs,
 		RunE:    cleanRunE(project.CleanAll),
 	}
@@ -40,7 +40,7 @@ func newCleanContainersCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "containers",
 		Short:   "Stop and remove all containers and the network",
-		Example: "ore clean containers",
+		Example: `ore clean containers`,
 		Args:    cobra.NoArgs,
 		RunE:    cleanRunE(project.CleanContainers),
 	}
@@ -50,7 +50,7 @@ func newCleanImagesCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "images",
 		Short:   "Remove Docker images built by ore",
-		Example: "ore clean images",
+		Example: `ore clean images`,
 		Args:    cobra.NoArgs,
 		RunE:    cleanRunE(project.CleanImages),
 	}
@@ -60,7 +60,7 @@ func newCleanVolumesCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "volumes",
 		Short:   "Remove Docker volumes (persistent server data)",
-		Example: "ore clean volumes",
+		Example: `ore clean volumes`,
 		Args:    cobra.NoArgs,
 		RunE:    cleanRunE(project.CleanVolumes),
 	}
@@ -70,7 +70,7 @@ func newCleanCacheCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "cache",
 		Short:   "Remove cached software binaries",
-		Example: "ore clean cache",
+		Example: `ore clean cache`,
 		Args:    cobra.NoArgs,
 		RunE:    cleanRunE(project.CleanCache),
 	}
@@ -80,7 +80,7 @@ func newCleanBuildsCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "builds",
 		Short:   "Remove build artifacts",
-		Example: "ore clean builds",
+		Example: `ore clean builds`,
 		Args:    cobra.NoArgs,
 		RunE:    cleanRunE(project.CleanBuilds),
 	}

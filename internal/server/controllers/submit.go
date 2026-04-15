@@ -18,15 +18,15 @@ func submitOperation(
 	store *operation.Store,
 	logger *slog.Logger,
 	logLevel slog.Level,
-	name, action, target string,
+	projectName, action, target string,
 	fn func(ctx context.Context, logger *slog.Logger) error,
 ) {
-	if _, err := pm.Resolve(name); err != nil {
+	if _, err := pm.Resolve(projectName); err != nil {
 		errs.Write(w, http.StatusNotFound, "project not found")
 		return
 	}
 
-	op, err := store.Submit(name, action, target, logLevel, logger, fn)
+	op, err := store.Submit(projectName, action, target, logLevel, logger, fn)
 	if err != nil {
 		errs.Write(w, http.StatusConflict, err.Error())
 		return

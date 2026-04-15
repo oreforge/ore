@@ -19,12 +19,6 @@ import (
 	"github.com/oreforge/ore/internal/spec"
 )
 
-const (
-	labelManaged = "ore.managed"
-	labelNetwork = "ore.network"
-	labelServer  = "ore.server"
-)
-
 func StartContainer(ctx context.Context, client docker.Client, srv *spec.Server, containerName, imageTag, networkName, dataBind string, logger *slog.Logger) error {
 	if err := stopAndRemove(ctx, client, containerName, logger); err != nil {
 		return err
@@ -40,9 +34,9 @@ func StartContainer(ctx context.Context, client docker.Client, srv *spec.Server,
 		Tty:       true,
 		OpenStdin: true,
 		Labels: map[string]string{
-			labelManaged: "true",
-			labelNetwork: networkName,
-			labelServer:  srv.Name,
+			LabelManaged: "true",
+			LabelNetwork: networkName,
+			LabelServer:  srv.Name,
 		},
 	}
 
@@ -80,7 +74,7 @@ func StartContainer(ctx context.Context, client docker.Client, srv *spec.Server,
 	}
 
 	for _, vol := range srv.Volumes {
-		volName := volumeName(networkName, containerName, vol.Name)
+		volName := VolumeNameFor(networkName, containerName, vol.Name)
 		hostConfig.Binds = append(hostConfig.Binds, volName+":"+vol.Target)
 	}
 
@@ -118,9 +112,9 @@ func StartServiceContainer(ctx context.Context, client docker.Client, svc *spec.
 		Tty:       true,
 		OpenStdin: true,
 		Labels: map[string]string{
-			labelManaged: "true",
-			labelNetwork: networkName,
-			labelServer:  svc.Name,
+			LabelManaged: "true",
+			LabelNetwork: networkName,
+			LabelServer:  svc.Name,
 		},
 	}
 
@@ -147,7 +141,7 @@ func StartServiceContainer(ctx context.Context, client docker.Client, svc *spec.
 	}
 
 	for _, vol := range svc.Volumes {
-		volName := volumeName(networkName, containerName, vol.Name)
+		volName := VolumeNameFor(networkName, containerName, vol.Name)
 		hostConfig.Binds = append(hostConfig.Binds, volName+":"+vol.Target)
 	}
 
@@ -247,8 +241,8 @@ func listOreContainers(ctx context.Context, client docker.Client, networkName st
 	return client.ContainerList(ctx, container.ListOptions{
 		All: true,
 		Filters: filters.NewArgs(
-			filters.Arg("label", labelManaged+"=true"),
-			filters.Arg("label", labelNetwork+"="+networkName),
+			filters.Arg("label", LabelManaged+"=true"),
+			filters.Arg("label", LabelNetwork+"="+networkName),
 		),
 	})
 }

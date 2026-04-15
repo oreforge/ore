@@ -81,14 +81,14 @@ func (rs ServiceResource) MountRoutes(s *fuego.Server) {
 }
 
 func (rs ServiceResource) list(c fuego.ContextNoBody) (dto.ServiceListResponse, error) {
-	name := c.PathParam("name")
-	if _, err := rs.PM.Resolve(name); err != nil {
+	projectName := c.PathParam("name")
+	if _, err := rs.PM.Resolve(projectName); err != nil {
 		return dto.ServiceListResponse{}, fuego.HTTPError{Status: 404, Detail: "project not found"}
 	}
 
-	status, err := rs.PM.Status(c.Context(), name)
+	status, err := rs.PM.Status(c.Context(), projectName)
 	if err != nil {
-		rs.Logger.Error("failed to get service list", "project", name, "error", err)
+		rs.Logger.Error("failed to get service list", "project", projectName, "error", err)
 		return dto.ServiceListResponse{}, fuego.HTTPError{Status: 500, Detail: "failed to get service status"}
 	}
 
@@ -98,14 +98,14 @@ func (rs ServiceResource) list(c fuego.ContextNoBody) (dto.ServiceListResponse, 
 }
 
 func (rs ServiceResource) get(c fuego.ContextNoBody) (dto.ServiceStatusResponse, error) {
-	name := c.PathParam("name")
+	projectName := c.PathParam("name")
 	serviceName := c.PathParam("service")
 
-	if _, err := rs.PM.Resolve(name); err != nil {
+	if _, err := rs.PM.Resolve(projectName); err != nil {
 		return dto.ServiceStatusResponse{}, fuego.HTTPError{Status: 404, Detail: "project not found"}
 	}
 
-	status, err := rs.PM.ServiceStatus(c.Context(), name, serviceName)
+	status, err := rs.PM.ServiceStatus(c.Context(), projectName, serviceName)
 	if err != nil {
 		return dto.ServiceStatusResponse{}, fuego.HTTPError{Status: 404, Detail: "service not found"}
 	}
@@ -113,12 +113,12 @@ func (rs ServiceResource) get(c fuego.ContextNoBody) (dto.ServiceStatusResponse,
 	return *status, nil
 }
 
-func (rs ServiceResource) submit(w http.ResponseWriter, r *http.Request, action string, fn func(ctx context.Context, name, serviceName string, logger *slog.Logger) error) {
-	name := r.PathValue("name")
+func (rs ServiceResource) submit(w http.ResponseWriter, r *http.Request, action string, fn func(ctx context.Context, projectName, serviceName string, logger *slog.Logger) error) {
+	projectName := r.PathValue("name")
 	serviceName := r.PathValue("service")
-	submitOperation(w, rs.PM, rs.Store, rs.Logger, rs.LogLevel, name, action, serviceName,
+	submitOperation(w, rs.PM, rs.Store, rs.Logger, rs.LogLevel, projectName, action, serviceName,
 		func(ctx context.Context, logger *slog.Logger) error {
-			return fn(ctx, name, serviceName, logger)
+			return fn(ctx, projectName, serviceName, logger)
 		})
 }
 

@@ -60,6 +60,7 @@ func Run(args []string, info BuildInfo) int {
 		newProjectsCmd(),
 		newNodesCmd(),
 		newVolumesCmd(),
+		newBackupsCmd(),
 		newVersionCmd(info),
 	)
 

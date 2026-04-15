@@ -15,41 +15,54 @@ import (
 )
 
 const (
-	LabelManaged    = "ore.managed"
-	LabelProject    = "ore.project"
-	LabelOwner      = "ore.owner"
-	LabelOwnerKind  = "ore.owner.kind"
-	LabelVolume     = "ore.volume"
-	LabelCreatedAt  = "ore.created.at"
-	LabelSchema     = "ore.schema"
-	OwnerKindServer = "server"
-	OwnerKindSvc    = "service"
-	SchemaVersion   = "1"
+	LabelManaged   = "ore.managed"
+	LabelNetwork   = "ore.network"
+	LabelServer    = "ore.server"
+	LabelProject   = "ore.project"
+	LabelOwner     = "ore.owner"
+	LabelOwnerKind = "ore.owner.kind"
+	LabelVolume    = "ore.volume"
+	LabelCreatedAt = "ore.created.at"
+
+	OwnerKindServer  = "server"
+	OwnerKindService = "service"
 )
 
 func VolumeNameFor(networkName, ownerContainer, logical string) string {
 	return networkName + "_" + ownerContainer + "_" + logical
 }
 
-func volumeName(networkName, containerName, volName string) string {
-	return VolumeNameFor(networkName, containerName, volName)
+func DeclaredVolumeNames(s *spec.Network) map[string]struct{} {
+	out := make(map[string]struct{})
+	for i := range s.Servers {
+		srv := s.Servers[i]
+		for _, v := range srv.Volumes {
+			out[VolumeNameFor(s.Network, ContainerName(&srv), v.Name)] = struct{}{}
+		}
+	}
+	for i := range s.Services {
+		svc := s.Services[i]
+		for _, v := range svc.Volumes {
+			out[VolumeNameFor(s.Network, ServiceContainerName(&svc), v.Name)] = struct{}{}
+		}
+	}
+	return out
 }
 
-func managedLabels(project, owner, ownerKind, logical string) map[string]string {
+func managedLabels(networkName, owner, ownerKind, logical string) map[string]string {
 	return map[string]string{
 		LabelManaged:   "true",
-		LabelProject:   project,
+		LabelProject:   networkName,
 		LabelOwner:     owner,
 		LabelOwnerKind: ownerKind,
 		LabelVolume:    logical,
 		LabelCreatedAt: time.Now().UTC().Format(time.RFC3339),
-		LabelSchema:    SchemaVersion,
 	}
 }
 
 func ensureVolumes(ctx context.Context, client docker.Client, ownerName, ownerKind, networkName string, vols []spec.Volume, logger *slog.Logger) error {
 	for _, vol := range vols {
-		name := volumeName(networkName, ownerName, vol.Name)
+		name := VolumeNameFor(networkName, ownerName, vol.Name)
 		logger.Debug("ensuring volume", "volume", name)
 		opts := volume.CreateOptions{
 			Name:   name,
@@ -67,12 +80,12 @@ func EnsureVolumes(ctx context.Context, client docker.Client, srv *spec.Server, 
 }
 
 func EnsureServiceVolumes(ctx context.Context, client docker.Client, svc *spec.Service, networkName string, logger *slog.Logger) error {
-	return ensureVolumes(ctx, client, ServiceContainerName(svc), OwnerKindSvc, networkName, svc.Volumes, logger)
+	return ensureVolumes(ctx, client, ServiceContainerName(svc), OwnerKindService, networkName, svc.Volumes, logger)
 }
 
 func removeVolumes(ctx context.Context, client docker.Client, containerName, networkName string, vols []spec.Volume, logger *slog.Logger) error {
 	for _, vol := range vols {
-		name := volumeName(networkName, containerName, vol.Name)
+		name := VolumeNameFor(networkName, containerName, vol.Name)
 		logger.Debug("removing volume", "volume", name)
 		if err := client.VolumeRemove(ctx, name, true); err != nil {
 			return fmt.Errorf("removing volume %s: %w", name, err)

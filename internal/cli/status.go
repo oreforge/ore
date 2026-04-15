@@ -18,7 +18,7 @@ func newStatusCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "status",
 		Short:   "Show server and service status",
-		Example: "ore status",
+		Example: `ore status`,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			local, specPath, remote, err := resolveMode(cmd)

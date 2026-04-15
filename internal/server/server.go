@@ -12,6 +12,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/go-fuego/fuego"
 
+	"github.com/oreforge/ore/internal/backup"
 	"github.com/oreforge/ore/internal/config"
 	"github.com/oreforge/ore/internal/docker"
 	"github.com/oreforge/ore/internal/operation"
@@ -27,7 +28,7 @@ type BuildInfo struct {
 	BuildDate string
 }
 
-func New(pm *project.Manager, opStore *operation.Store, token string, logger *slog.Logger, logLevel slog.Level, dockerClient docker.Client, addr string, version string) *fuego.Server {
+func New(pm *project.Manager, opStore *operation.Store, token string, logger *slog.Logger, logLevel slog.Level, dockerClient docker.Client, addr string, version string, backupsDir string) (*fuego.Server, error) {
 	if strings.HasPrefix(addr, ":") {
 		addr = "0.0.0.0" + addr
 	}
@@ -76,9 +77,16 @@ func New(pm *project.Manager, opStore *operation.Store, token string, logger *sl
 	projectRes := controllers.ProjectResource{PM: pm, Store: opStore, DockerClient: dockerClient, LogLevel: logLevel, Logger: logger, Token: token}
 	ops := projectRes.MountRoutes(authed)
 
+	volSvc := volumes.New(dockerClient, logger)
+	backupSvc, err := backup.NewLocalService(backupsDir, volSvc, backup.NewHelperSnapshotter(dockerClient), logger)
+	if err != nil {
+		return nil, err
+	}
+
 	controllers.ServerResource{PM: pm, Store: opStore, LogLevel: logLevel, Logger: logger}.MountRoutes(ops)
 	controllers.ServiceResource{PM: pm, Store: opStore, LogLevel: logLevel, Logger: logger}.MountRoutes(ops)
-	controllers.VolumeResource{PM: pm, Volumes: volumes.New(dockerClient, logger), Logger: logger}.MountRoutes(ops)
+	controllers.VolumeResource{PM: pm, Volumes: volSvc, Store: opStore, LogLevel: logLevel, Logger: logger}.MountRoutes(ops)
+	controllers.BackupResource{PM: pm, Backups: backupSvc, Store: opStore, LogLevel: logLevel, Logger: logger}.MountRoutes(ops)
 
 	controllers.OperationResource{Store: opStore, Logger: logger, LogLevel: logLevel}.MountRoutes(authed)
 
@@ -99,7 +107,7 @@ func New(pm *project.Manager, opStore *operation.Store, token string, logger *sl
 		}
 	}
 
-	return s
+	return s, nil
 }
 
 func Run(_ []string, info BuildInfo) int {
@@ -137,7 +145,11 @@ func Run(_ []string, info BuildInfo) int {
 	opStore := operation.NewStore(logger)
 	pm := project.NewManager(cfg.Projects, cfg.BindMounts, logger, opStore)
 
-	s := New(pm, opStore, cfg.Token, logger, level, dockerClient, cfg.Addr, info.Version)
+	s, err := New(pm, opStore, cfg.Token, logger, level, dockerClient, cfg.Addr, info.Version, cfg.Backups)
+	if err != nil {
+		logger.Error("failed to initialise server", "error", err)
+		return 1
+	}
 
 	pm.StartPolling()
 

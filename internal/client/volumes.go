@@ -8,6 +8,7 @@ import (
 	"net/url"
 
 	"github.com/oreforge/ore/internal/server/dto"
+	"github.com/oreforge/ore/internal/volumes"
 )
 
 func (c *Client) Volumes(ctx context.Context) ([]dto.VolumeResponse, error) {
@@ -34,6 +35,54 @@ func (c *Client) Volumes(ctx context.Context) ([]dto.VolumeResponse, error) {
 		return nil, fmt.Errorf("decoding volumes: %w", err)
 	}
 	return out.Volumes, nil
+}
+
+func (c *Client) VolumeMeasure(ctx context.Context, name string) error {
+	if err := c.requireProject(); err != nil {
+		return err
+	}
+	return c.streamRequest(ctx, http.MethodPost, c.projectPath()+"/volumes/"+url.PathEscape(name)+"/measure", nil)
+}
+
+func (c *Client) VolumeRemove(ctx context.Context, name string, force bool) error {
+	if err := c.requireProject(); err != nil {
+		return err
+	}
+	path := c.projectPath() + "/volumes/" + url.PathEscape(name)
+	if force {
+		path += "?force=true"
+	}
+	return c.streamRequest(ctx, http.MethodDelete, path, nil)
+}
+
+func (c *Client) VolumePrune(ctx context.Context, dryRun bool) (*volumes.PruneReport, error) {
+	if err := c.requireProject(); err != nil {
+		return nil, err
+	}
+	path := c.projectPath() + "/volumes/prune"
+	if dryRun {
+		path += "?dry_run=true"
+	}
+	req, err := c.newRequest(ctx, http.MethodPost, path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("prune request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, c.readError(resp)
+	}
+
+	var report volumes.PruneReport
+	if err := json.NewDecoder(resp.Body).Decode(&report); err != nil {
+		return nil, fmt.Errorf("decoding prune report: %w", err)
+	}
+	return &report, nil
 }
 
 func (c *Client) Volume(ctx context.Context, name string) (*dto.VolumeResponse, error) {

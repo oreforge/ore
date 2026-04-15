@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/oreforge/ore/internal/deploy"
 	"github.com/oreforge/ore/internal/docker"
 	"github.com/oreforge/ore/internal/server/dto"
 	"github.com/oreforge/ore/internal/spec"
@@ -21,51 +21,49 @@ import (
 
 func newVolumesCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "volumes",
-		Aliases: []string{"volume", "vol"},
-		Short:   "Manage ore-managed Docker volumes",
+		Use:   "volumes",
+		Short: "Manage ore-managed Docker volumes",
 	}
-	cmd.AddCommand(newVolumesListCmd(), newVolumesInspectCmd())
+	cmd.AddCommand(
+		newVolumesListCmd(),
+		newVolumesShowCmd(),
+		newVolumesSizeCmd(),
+		newVolumesRemoveCmd(),
+		newVolumesPruneCmd(),
+	)
 	return cmd
 }
 
 func newVolumesListCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:     "ls",
-		Aliases: []string{"list"},
+	return &cobra.Command{
+		Use:     "list",
 		Short:   "List volumes for the current project",
-		Example: "ore volumes ls\n  ore volumes ls -o json",
+		Example: `ore volumes list`,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			output, _ := cmd.Flags().GetString("output")
 			vols, err := fetchVolumes(cmd)
 			if err != nil {
 				return err
 			}
-			return renderVolumeList(vols, output)
+			return writeVolumeTable(vols)
 		},
 	}
-	cmd.Flags().StringP("output", "o", "table", "output format: table|json")
-	return cmd
 }
 
-func newVolumesInspectCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:     "inspect <name>",
-		Short:   "Show detailed information about a volume",
-		Example: "ore volumes inspect playground_lobby_world",
+func newVolumesShowCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "show <name>",
+		Short:   "Show volume details",
+		Example: `ore volumes show playground_lobby_world`,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			output, _ := cmd.Flags().GetString("output")
 			v, err := fetchVolume(cmd, args[0])
 			if err != nil {
 				return err
 			}
-			return renderVolume(v, output)
+			return writeVolumeDetail(v)
 		},
 	}
-	cmd.Flags().StringP("output", "o", "table", "output format: table|json")
-	return cmd
 }
 
 func fetchVolumes(cmd *cobra.Command) ([]dto.VolumeResponse, error) {
@@ -153,32 +151,6 @@ func localVolumeService(ctx context.Context) (*volumes.Service, func(), error) {
 	return volumes.New(dockerClient, logger), func() { _ = dockerClient.Close() }, nil
 }
 
-func renderVolumeList(vols []dto.VolumeResponse, output string) error {
-	switch strings.ToLower(output) {
-	case "json":
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		return enc.Encode(vols)
-	case "", "table":
-		return writeVolumeTable(vols)
-	default:
-		return fmt.Errorf("unknown output format: %s (valid: table, json)", output)
-	}
-}
-
-func renderVolume(v *dto.VolumeResponse, output string) error {
-	switch strings.ToLower(output) {
-	case "json":
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		return enc.Encode(v)
-	case "", "table":
-		return writeVolumeDetail(v)
-	default:
-		return fmt.Errorf("unknown output format: %s (valid: table, json)", output)
-	}
-}
-
 func writeVolumeTable(vols []dto.VolumeResponse) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
 	_, _ = fmt.Fprintln(w, "NAME\tOWNER\tLOGICAL\tSIZE\tIN USE\tCREATED")
@@ -262,4 +234,180 @@ func fallback(s, def string) string {
 		return def
 	}
 	return s
+}
+
+func newVolumesSizeCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "size <name>",
+		Short:   "Measure the disk usage of a volume",
+		Example: `ore volumes size playground_lobby_world`,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			local, specPath, remote, err := resolveMode(cmd)
+			if err != nil {
+				return err
+			}
+			if remote != nil {
+				defer func() { _ = remote.Close() }()
+			}
+			if local {
+				return localVolumeMeasure(cmd.Context(), specPath, args[0])
+			}
+			return remote.VolumeMeasure(cmd.Context(), args[0])
+		},
+	}
+}
+
+func newVolumesRemoveCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "remove <name>",
+		Short: "Remove a volume",
+		Example: `ore volumes remove playground_lobby_world
+ore volumes remove playground_lobby_world --force`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			force, _ := cmd.Flags().GetBool("force")
+			local, specPath, remote, err := resolveMode(cmd)
+			if err != nil {
+				return err
+			}
+			if remote != nil {
+				defer func() { _ = remote.Close() }()
+			}
+			if local {
+				return localVolumeRemove(cmd.Context(), specPath, args[0], force)
+			}
+			return remote.VolumeRemove(cmd.Context(), args[0], force)
+		},
+	}
+	cmd.Flags().Bool("force", false, "stop containers that are using the volume before removing")
+	return cmd
+}
+
+func newVolumesPruneCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "prune",
+		Short: "Remove volumes no longer declared in ore.yaml",
+		Example: `ore volumes prune
+ore volumes prune --dry-run`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			dryRun, _ := cmd.Flags().GetBool("dry-run")
+			local, specPath, remote, err := resolveMode(cmd)
+			if err != nil {
+				return err
+			}
+			if remote != nil {
+				defer func() { _ = remote.Close() }()
+			}
+
+			var report *volumes.PruneReport
+			if local {
+				report, err = localVolumePrune(cmd.Context(), specPath, dryRun)
+			} else {
+				report, err = remote.VolumePrune(cmd.Context(), dryRun)
+			}
+			if err != nil {
+				return err
+			}
+			return printPruneReport(report)
+		},
+	}
+	cmd.Flags().Bool("dry-run", false, "preview which volumes would be deleted without deleting them")
+	return cmd
+}
+
+func localVolumeMeasure(ctx context.Context, specPath, name string) error {
+	s, err := spec.Load(specPath)
+	if err != nil {
+		return err
+	}
+	svc, cleanup, err := localVolumeService(ctx)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	v, err := svc.Inspect(ctx, name)
+	if err != nil {
+		if errors.Is(err, volumes.ErrNotFound) {
+			return fmt.Errorf("volume %q not found", name)
+		}
+		return err
+	}
+	if v.Project != s.Network {
+		return fmt.Errorf("volume %q belongs to a different project", name)
+	}
+
+	size, err := svc.Measure(ctx, name)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%s\t%s (%d bytes)\n", name, formatSize(size), size)
+	return nil
+}
+
+func localVolumeRemove(ctx context.Context, specPath, name string, force bool) error {
+	s, err := spec.Load(specPath)
+	if err != nil {
+		return err
+	}
+	svc, cleanup, err := localVolumeService(ctx)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	v, err := svc.Inspect(ctx, name)
+	if err != nil {
+		if errors.Is(err, volumes.ErrNotFound) {
+			return fmt.Errorf("volume %q not found", name)
+		}
+		return err
+	}
+	if v.Project != s.Network {
+		return fmt.Errorf("volume %q belongs to a different project", name)
+	}
+
+	if err := svc.Remove(ctx, name, force); err != nil {
+		if errors.Is(err, volumes.ErrInUse) {
+			return fmt.Errorf("%w (retry with --force to stop containers first)", err)
+		}
+		return err
+	}
+	fmt.Printf("removed %s\n", name)
+	return nil
+}
+
+func localVolumePrune(ctx context.Context, specPath string, dryRun bool) (*volumes.PruneReport, error) {
+	s, err := spec.Load(specPath)
+	if err != nil {
+		return nil, err
+	}
+	svc, cleanup, err := localVolumeService(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+
+	return svc.Prune(ctx, s.Network, deploy.DeclaredVolumeNames(s), dryRun)
+}
+
+func printPruneReport(report *volumes.PruneReport) error {
+	if len(report.Candidates) == 0 {
+		fmt.Println("no orphaned volumes")
+		return nil
+	}
+	if report.DryRun {
+		fmt.Printf("Dry-run: %d volume(s) would be removed:\n", len(report.Candidates))
+	} else {
+		fmt.Printf("Removed %d volume(s):\n", len(report.Deleted))
+	}
+	for _, c := range report.Candidates {
+		fmt.Printf("  %s (owner %s, logical %s)\n", c.Name, fallback(c.Owner, "—"), fallback(c.Logical, "—"))
+	}
+	for _, sk := range report.Skipped {
+		fmt.Printf("  skipped %s: %s\n", sk.Name, sk.Reason)
+	}
+	return nil
 }

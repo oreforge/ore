@@ -185,8 +185,17 @@ ore clean images                    Remove Docker images built by ore
 ore clean volumes                   Remove Docker volumes (persistent server data)
 ore clean cache                     Remove cached software binaries
 ore clean builds                    Remove build artifacts
-ore volumes ls                      List ore-managed Docker volumes (--output table|json)
-ore volumes inspect <name>          Show volume metadata and current usage
+ore volumes list                            List ore-managed Docker volumes
+ore volumes show <name>                     Show volume metadata and current usage
+ore volumes size <name>                     Measure the on-disk size of a volume
+ore volumes remove <name> [--force]         Remove a volume (--force stops containers using it)
+ore volumes prune [--dry-run]               Remove volumes no longer declared in ore.yaml
+ore backups create <volume> [--tag t]         Snapshot a volume (tar+zstd, sha256-verified)
+ore backups list [--volume v]                 List backups
+ore backups show <id>                         Show backup metadata
+ore backups restore <id> [--keep-pre-restore] Restore a backup into its source volume
+ore backups verify <id>                       Recompute the backup's sha256 and compare
+ore backups remove <id>                       Remove a backup archive and sidecar
 ore nodes list                      List configured nodes
 ore nodes add <name>                Add a remote node (--addr, --token required; --project, --force optional)
 ore nodes show <name>               Show node details
@@ -273,15 +282,47 @@ Values support `${VAR}` environment variable expansion.
 
 ## Volumes
 
-ore tags every Docker volume it creates with a set of labels (`ore.managed`, `ore.project`, `ore.owner`, `ore.owner.kind`, `ore.volume`, `ore.created.at`, `ore.schema`). These labels make volumes discoverable and scopable per project without any external state.
+ore tags every Docker volume it creates with a set of labels (`ore.managed`, `ore.project`, `ore.owner`, `ore.owner.kind`, `ore.volume`, `ore.created.at`). These labels make volumes discoverable and scopable per project without any external state. Volumes follow the deterministic name `{network}_{container}_{logical}`, so they survive container recreation and `ore up` reattaches the same data.
 
 ```sh
-ore volumes ls                     # list volumes in the current project
-ore volumes ls -o json             # same, as JSON
-ore volumes inspect <name>         # show metadata and which containers use it
+ore volumes list                   # list volumes in the current project
+ore volumes show <name>            # show metadata and which containers use it
+ore volumes size <name>            # measure on-disk usage via a helper container
+ore volumes remove <name>          # remove a volume (add --force if it is in use)
+ore volumes prune                  # remove volumes no longer declared in ore.yaml
+ore volumes prune --dry-run        # preview without removing
 ```
 
-Volumes created before labels were added will not appear in these views until they are recreated by `ore up`.
+`size` runs `du -sb` on demand in a short-lived `alpine:3` helper with the volume mounted read-only; the number is always fresh, never cached. `remove --force` stops any container currently mounting the volume before removing it. `prune` compares the labeled volumes against what is declared in `ore.yaml` and removes the delta; volumes still in use are skipped and reported. Use `--dry-run` to preview the delta without removing.
+
+Volumes created before these labels existed will not appear in these views until they are recreated by `ore up`.
+
+## Backups
+
+Backups snapshot a Docker volume into a local, compressed, checksummed archive. They are stored under `$XDG_DATA_HOME/ored/backups` (overridable via the `backups` key in the ored config, or `ORED_BACKUPS`) as:
+
+```
+{backups}/{network}/{volume}/{ulid}.tar.zst   # archive
+{backups}/{network}/{volume}/{ulid}.json      # sidecar with metadata
+```
+
+The JSON sidecar is the source of truth — it records the backup's status, timestamps, raw and compressed sizes, sha256 checksum, tags, and storage refs. ored rebuilds its in-memory index by scanning the backups directory at startup, so there is no separate database to manage.
+
+```sh
+ore backups create <volume>                   # snapshot a volume
+ore backups create <volume> --tag weekly      # attach tags
+ore backups list                              # list all backups for the current project
+ore backups list --volume <name>              # filter by source volume
+ore backups show <id>                         # full metadata including checksum and storage refs
+ore backups verify <id>                       # recompute and compare the sha256
+ore backups restore <id>                      # extract the archive back into the source volume
+ore backups restore <id> --keep-pre-restore   # take a safety snapshot first
+ore backups remove <id>                       # remove the archive and sidecar
+```
+
+Snapshots run through a short-lived `alpine:3` helper that `tar`s the volume's contents, piped directly through zstd compression and a sha256 hasher into an atomically-committed archive file — the volume's bytes are never buffered on the host outside the final archive. Restores stream the archive back through zstd, wipe the target volume (`find -mindepth 1 -delete`), and `tar -x` into it; `--keep-pre-restore` takes a safety snapshot first so a bad restore can be rolled back. `verify` re-hashes the archive and stamps the sidecar with a `verified` timestamp on match.
+
+Create, restore, and verify are submitted as asynchronous operations — the CLI streams their logs until completion. Backups accumulate indefinitely; there is no automatic retention policy yet.
 
 ## Remote Mode
 
@@ -433,4 +474,5 @@ bind_mounts: false
 | `log_level`          | `ORED_LOG_LEVEL`          | `info`                         | Log level                   |
 | `token`              | `ORED_TOKEN`              | *(auto-generated)*             | Bearer token for API auth   |
 | `projects`           | `ORED_PROJECTS`           | `$XDG_DATA_HOME/ored/projects` | Projects directory          |
+| `backups`            | `ORED_BACKUPS`            | `$XDG_DATA_HOME/ored/backups`  | Backups directory           |
 | `bind_mounts`        | `ORED_BIND_MOUNTS`        | `false`                        | Bind-mount server data dirs |

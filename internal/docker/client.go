@@ -32,6 +32,8 @@ type ContainerClient interface {
 	ContainerStatsOneShot(ctx context.Context, containerID string) (container.StatsResponseReader, error)
 	ContainerAttach(ctx context.Context, container string, options container.AttachOptions) (types.HijackedResponse, error)
 	ContainerResize(ctx context.Context, container string, options container.ResizeOptions) error
+	ContainerWait(ctx context.Context, containerID string, condition container.WaitCondition) (<-chan container.WaitResponse, <-chan error)
+	ContainerLogs(ctx context.Context, containerID string, options container.LogsOptions) (io.ReadCloser, error)
 }
 
 type NetworkClient interface {
