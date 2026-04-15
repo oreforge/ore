@@ -228,9 +228,6 @@ func (s *Service) runSnapshot(ctx context.Context, b *Backup, logger *slog.Logge
 	if err != nil {
 		return err
 	}
-	if err := wc.Close(); err != nil {
-		return fmt.Errorf("closing backend writer: %w", err)
-	}
 	if err := stream.Wait(); err != nil {
 		return err
 	}
