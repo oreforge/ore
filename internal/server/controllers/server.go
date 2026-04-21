@@ -2,8 +2,11 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/go-fuego/fuego"
@@ -12,6 +15,7 @@ import (
 	"github.com/oreforge/ore/internal/operation"
 	"github.com/oreforge/ore/internal/project"
 	"github.com/oreforge/ore/internal/server/dto"
+	"github.com/oreforge/ore/internal/server/errs"
 )
 
 type ServerResource struct {
@@ -66,6 +70,46 @@ func (rs ServerResource) MountRoutes(s *fuego.Server) {
 		option.AddResponse(http.StatusConflict, "Operation already in progress", fuego.Response{Type: fuego.HTTPError{}}),
 		bearer,
 	)
+	fuego.PostStd(s, "/servers:batchStart", rs.batchStart,
+		option.Summary("Batch start servers"),
+		option.Description("Starts multiple servers in parallel. By default blocks and returns per-target results; pass ?async=true for the standard operation response."),
+		option.Tags("Servers"),
+		option.OperationID("batchStartServers"),
+		option.RequestBody(fuego.RequestBody{Type: dto.BatchTargetsRequest{}}),
+		option.Query("async", "Return 202 + operation response instead of waiting for completion"),
+		option.AddResponse(http.StatusOK, "Batch completed", fuego.Response{Type: dto.BatchResponse{}}),
+		option.AddResponse(http.StatusAccepted, "Operation accepted (async)", fuego.Response{Type: dto.OperationResponse{}}),
+		option.AddResponse(http.StatusBadRequest, "Invalid request or unknown targets", fuego.Response{Type: fuego.HTTPError{}}),
+		option.AddResponse(http.StatusConflict, "Operation already in progress", fuego.Response{Type: fuego.HTTPError{}}),
+		bearer,
+	)
+	fuego.PostStd(s, "/servers:batchStop", rs.batchStop,
+		option.Summary("Batch stop servers"),
+		option.Description("Stops multiple servers in parallel. By default blocks and returns per-target results; pass ?async=true for the standard operation response."),
+		option.Tags("Servers"),
+		option.OperationID("batchStopServers"),
+		option.RequestBody(fuego.RequestBody{Type: dto.BatchTargetsRequest{}}),
+		option.Query("async", "Return 202 + operation response instead of waiting for completion"),
+		option.AddResponse(http.StatusOK, "Batch completed", fuego.Response{Type: dto.BatchResponse{}}),
+		option.AddResponse(http.StatusAccepted, "Operation accepted (async)", fuego.Response{Type: dto.OperationResponse{}}),
+		option.AddResponse(http.StatusBadRequest, "Invalid request or unknown targets", fuego.Response{Type: fuego.HTTPError{}}),
+		option.AddResponse(http.StatusConflict, "Operation already in progress", fuego.Response{Type: fuego.HTTPError{}}),
+		bearer,
+	)
+	fuego.PostStd(s, "/servers:batchRestart", rs.batchRestart,
+		option.Summary("Batch restart servers"),
+		option.Description("Restarts multiple servers in parallel. By default blocks and returns per-target results; pass ?async=true for the standard operation response."),
+		option.Tags("Servers"),
+		option.OperationID("batchRestartServers"),
+		option.RequestBody(fuego.RequestBody{Type: dto.BatchTargetsRequest{}}),
+		option.Query("async", "Return 202 + operation response instead of waiting for completion"),
+		option.AddResponse(http.StatusOK, "Batch completed", fuego.Response{Type: dto.BatchResponse{}}),
+		option.AddResponse(http.StatusAccepted, "Operation accepted (async)", fuego.Response{Type: dto.OperationResponse{}}),
+		option.AddResponse(http.StatusBadRequest, "Invalid request or unknown targets", fuego.Response{Type: fuego.HTTPError{}}),
+		option.AddResponse(http.StatusConflict, "Operation already in progress", fuego.Response{Type: fuego.HTTPError{}}),
+		bearer,
+	)
+
 	fuego.PostStd(servers, "/{server}/restart", rs.restart,
 		option.Summary("Restart a server"),
 		option.Description("Restarts a server. Returns an operation that can be tracked via the operations API."),
@@ -133,4 +177,62 @@ func (rs ServerResource) stop(w http.ResponseWriter, r *http.Request) {
 
 func (rs ServerResource) restart(w http.ResponseWriter, r *http.Request) {
 	rs.submit(w, r, operation.ActionRestart, rs.PM.RestartServer)
+}
+
+func (rs ServerResource) batchStart(w http.ResponseWriter, r *http.Request) {
+	rs.batchSubmit(w, r, operation.ActionBatchStart, rs.PM.StartServer)
+}
+
+func (rs ServerResource) batchStop(w http.ResponseWriter, r *http.Request) {
+	rs.batchSubmit(w, r, operation.ActionBatchStop, rs.PM.StopServer)
+}
+
+func (rs ServerResource) batchRestart(w http.ResponseWriter, r *http.Request) {
+	rs.batchSubmit(w, r, operation.ActionBatchRestart, rs.PM.RestartServer)
+}
+
+func (rs ServerResource) batchSubmit(
+	w http.ResponseWriter,
+	r *http.Request,
+	action string,
+	fn func(ctx context.Context, projectName, targetName string, logger *slog.Logger) error,
+) {
+	projectName := r.PathValue("name")
+
+	var req dto.BatchTargetsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		errs.Write(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	targets, err := normalizeTargets(req.Targets)
+	if err != nil {
+		errs.Write(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if _, rerr := rs.PM.Resolve(projectName); rerr != nil {
+		errs.Write(w, http.StatusNotFound, "project not found")
+		return
+	}
+
+	if missing := rs.findMissingServers(r.Context(), projectName, targets); len(missing) > 0 {
+		errs.Write(w, http.StatusBadRequest, "unknown targets: "+strings.Join(missing, ","))
+		return
+	}
+
+	submitBatchOperation(w, r, rs.Store, rs.Logger, rs.LogLevel,
+		projectName, action, fmt.Sprintf("%d servers", len(targets)), targets,
+		func(ctx context.Context, t string, l *slog.Logger) error {
+			return fn(ctx, projectName, t, l)
+		})
+}
+
+func (rs ServerResource) findMissingServers(ctx context.Context, projectName string, targets []string) []string {
+	var missing []string
+	for _, t := range targets {
+		if _, err := rs.PM.ServerStatus(ctx, projectName, t); err != nil {
+			missing = append(missing, t)
+		}
+	}
+	return missing
 }

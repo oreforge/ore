@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/go-fuego/fuego"
@@ -61,6 +63,19 @@ func (rs VolumeResource) MountRoutes(s *fuego.Server) {
 		option.AddResponse(http.StatusAccepted, "Operation accepted", fuego.Response{Type: dto.OperationResponse{}}),
 		option.AddResponse(http.StatusNotFound, "Volume not found", fuego.Response{Type: fuego.HTTPError{}}),
 		option.AddResponse(http.StatusConflict, "Volume in use (retry with ?force=true)", fuego.Response{Type: fuego.HTTPError{}}),
+		bearer,
+	)
+	fuego.PostStd(s, "/volumes:batchDelete", rs.batchDelete,
+		option.Summary("Batch delete volumes"),
+		option.Description("Deletes multiple volumes in parallel. Pass {\"targets\":[...], \"force\":bool}. By default blocks and returns per-target results; pass ?async=true for the standard operation response."),
+		option.Tags("Volumes"),
+		option.OperationID("batchDeleteVolumes"),
+		option.RequestBody(fuego.RequestBody{Type: dto.BatchVolumeDeleteRequest{}}),
+		option.Query("async", "Return 202 + operation response instead of waiting for completion"),
+		option.AddResponse(http.StatusOK, "Batch completed", fuego.Response{Type: dto.BatchResponse{}}),
+		option.AddResponse(http.StatusAccepted, "Operation accepted (async)", fuego.Response{Type: dto.OperationResponse{}}),
+		option.AddResponse(http.StatusBadRequest, "Invalid request or unknown targets", fuego.Response{Type: fuego.HTTPError{}}),
+		option.AddResponse(http.StatusConflict, "Operation already in progress", fuego.Response{Type: fuego.HTTPError{}}),
 		bearer,
 	)
 	fuego.PostStd(vols, "/prune", rs.prune,
@@ -183,6 +198,56 @@ func (rs VolumeResource) ensureVolumeInProject(ctx context.Context, w http.Respo
 		return errors.New("volume not in project")
 	}
 	return nil
+}
+
+func (rs VolumeResource) batchDelete(w http.ResponseWriter, r *http.Request) {
+	projectName := r.PathValue("name")
+
+	var req dto.BatchVolumeDeleteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		errs.Write(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	targets, err := normalizeTargets(req.Targets)
+	if err != nil {
+		errs.Write(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	networkName, nerr := resolveNetwork(rs.PM, rs.Logger, projectName)
+	if nerr != nil {
+		writeHTTPError(w, nerr)
+		return
+	}
+
+	if missing := rs.findMissingVolumes(r.Context(), networkName, targets); len(missing) > 0 {
+		errs.Write(w, http.StatusBadRequest, "unknown volumes: "+strings.Join(missing, ","))
+		return
+	}
+
+	force := req.Force
+	submitBatchOperation(w, r, rs.Store, rs.Logger, rs.LogLevel,
+		projectName, operation.ActionBatchVolumeRemove, fmt.Sprintf("%d volumes", len(targets)), targets,
+		func(ctx context.Context, t string, l *slog.Logger) error {
+			if err := rs.Volumes.Remove(ctx, t, force); err != nil {
+				if errors.Is(err, volumes.ErrInUse) {
+					l.Warn("volume in use; pass force=true to stop containers", "volume", t)
+				}
+				return err
+			}
+			return nil
+		})
+}
+
+func (rs VolumeResource) findMissingVolumes(ctx context.Context, networkName string, targets []string) []string {
+	var missing []string
+	for _, t := range targets {
+		v, err := rs.Volumes.Inspect(ctx, t)
+		if err != nil || v.Project != networkName {
+			missing = append(missing, t)
+		}
+	}
+	return missing
 }
 
 func writeHTTPError(w http.ResponseWriter, err error) {

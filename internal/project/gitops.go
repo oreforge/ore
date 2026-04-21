@@ -121,10 +121,16 @@ func (m *Manager) poll(ctx context.Context, name string, interval time.Duration,
 }
 
 func (m *Manager) TriggerDeploy(name string, opts UpOptions) (string, error) {
-	op, err := m.opStore.Submit(name, operation.ActionDeploy, "", slog.LevelInfo, m.logger,
-		func(ctx context.Context, logger *slog.Logger) error {
+	op, err := m.opStore.Submit(operation.SubmitRequest{
+		Project:   name,
+		Action:    operation.ActionDeploy,
+		Exclusive: true,
+		LogLevel:  slog.LevelInfo,
+		Logger:    m.logger,
+		Fn: func(ctx context.Context, logger *slog.Logger) error {
 			return m.Deploy(ctx, name, opts)
-		})
+		},
+	})
 	if err != nil {
 		return "", err
 	}

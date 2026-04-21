@@ -29,6 +29,11 @@ const (
 	ActionRestart      = "restart"
 	ActionDeploy       = "deploy"
 	ActionVolumeRemove = "volume.remove"
+
+	ActionBatchStart        = "batch.start"
+	ActionBatchStop         = "batch.stop"
+	ActionBatchRestart      = "batch.restart"
+	ActionBatchVolumeRemove = "batch.volume.remove"
 )
 
 type Operation struct {
@@ -36,6 +41,9 @@ type Operation struct {
 	Project string
 	Action  string
 	Target  string
+
+	targets   []string
+	exclusive bool
 
 	mu        sync.RWMutex
 	status    Status
