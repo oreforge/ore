@@ -27,7 +27,6 @@ func newVolumesCmd() *cobra.Command {
 	cmd.AddCommand(
 		newVolumesListCmd(),
 		newVolumesShowCmd(),
-		newVolumesSizeCmd(),
 		newVolumesRemoveCmd(),
 		newVolumesPruneCmd(),
 	)
@@ -236,28 +235,6 @@ func fallback(s, def string) string {
 	return s
 }
 
-func newVolumesSizeCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:     "size <name>",
-		Short:   "Measure the disk usage of a volume",
-		Example: `ore volumes size playground_lobby_world`,
-		Args:    cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			local, specPath, remote, err := resolveMode(cmd)
-			if err != nil {
-				return err
-			}
-			if remote != nil {
-				defer func() { _ = remote.Close() }()
-			}
-			if local {
-				return localVolumeMeasure(cmd.Context(), specPath, args[0])
-			}
-			return remote.VolumeMeasure(cmd.Context(), args[0])
-		},
-	}
-}
-
 func newVolumesRemoveCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "remove <name>",
@@ -315,36 +292,6 @@ ore volumes prune --dry-run`,
 	}
 	cmd.Flags().Bool("dry-run", false, "preview which volumes would be deleted without deleting them")
 	return cmd
-}
-
-func localVolumeMeasure(ctx context.Context, specPath, name string) error {
-	s, err := spec.Load(specPath)
-	if err != nil {
-		return err
-	}
-	svc, cleanup, err := localVolumeService(ctx)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-
-	v, err := svc.Inspect(ctx, name)
-	if err != nil {
-		if errors.Is(err, volumes.ErrNotFound) {
-			return fmt.Errorf("volume %q not found", name)
-		}
-		return err
-	}
-	if v.Project != s.Network {
-		return fmt.Errorf("volume %q belongs to a different project", name)
-	}
-
-	size, err := svc.Measure(ctx, name)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("%s\t%s (%d bytes)\n", name, formatSize(size), size)
-	return nil
 }
 
 func localVolumeRemove(ctx context.Context, specPath, name string, force bool) error {

@@ -30,8 +30,27 @@ type fakeDocker struct {
 	containers []container.Summary
 	mounts     map[string][]container.MountPoint
 	names      map[string]string
+	sizes      map[string]int64
+	diskErr    error
 	listErr    error
 	listCalls  int
+}
+
+func (f *fakeDocker) DiskUsage(ctx context.Context, opts types.DiskUsageOptions) (types.DiskUsage, error) {
+	if f.diskErr != nil {
+		return types.DiskUsage{}, f.diskErr
+	}
+	out := types.DiskUsage{}
+	for _, v := range f.volumes {
+		size, ok := f.sizes[v.Name]
+		if !ok {
+			size = SizeUnknown
+		}
+		cp := *v
+		cp.UsageData = &dockervolume.UsageData{Size: size, RefCount: -1}
+		out.Volumes = append(out.Volumes, &cp)
+	}
+	return out, nil
 }
 
 func (f *fakeDocker) VolumeList(ctx context.Context, opts dockervolume.ListOptions) (dockervolume.ListResponse, error) {
@@ -235,6 +254,7 @@ func TestList(t *testing.T) {
 				{Name: "bar_db_data", Driver: "local", Labels: managed("bar", "bar-db", "service", "data")},
 				{Name: "legacy", Driver: "local", Labels: map[string]string{}}, // unmanaged
 			},
+			sizes: map[string]int64{"foo_lobby_world": 4096},
 		}
 		svc := New(fd, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
@@ -244,7 +264,7 @@ func TestList(t *testing.T) {
 		assert.Equal(t, "foo_lobby_world", got[0].Name)
 		assert.Equal(t, "foo", got[0].Project)
 		assert.Equal(t, "world", got[0].Logical)
-		assert.Equal(t, SizeUnknown, got[0].SizeBytes)
+		assert.Equal(t, int64(4096), got[0].SizeBytes)
 	})
 
 	t.Run("merges_in_use_by_from_containers", func(t *testing.T) {

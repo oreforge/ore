@@ -15,7 +15,7 @@ type VolumeResponse struct {
 	Driver     string   `json:"driver"`
 	Mountpoint string   `json:"mountpoint,omitempty"`
 	CreatedAt  string   `json:"createdAt,omitempty" example:"2026-04-14T10:00:00Z"`
-	SizeBytes  int64    `json:"sizeBytes" doc:"Size in bytes; -1 when not yet measured"`
+	SizeBytes  int64    `json:"sizeBytes" doc:"Size in bytes reported by Docker /system/df; -1 when unavailable (non-local driver)"`
 	InUseBy    []string `json:"inUseBy" doc:"Container names currently mounting this volume"`
 }
 

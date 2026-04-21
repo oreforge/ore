@@ -50,17 +50,6 @@ func (rs VolumeResource) MountRoutes(s *fuego.Server) {
 		option.AddResponse(http.StatusNotFound, "Volume not found", fuego.Response{Type: fuego.HTTPError{}}),
 		bearer,
 	)
-	fuego.PostStd(vols, "/{volume}/measure", rs.measure,
-		option.Summary("Measure volume size"),
-		option.Description("Runs a helper container to compute the volume size. Returns an operation."),
-		option.Tags("Volumes"),
-		option.OperationID("measureVolume"),
-		option.Path("volume", "Docker volume name"),
-		option.DefaultStatusCode(http.StatusAccepted),
-		option.AddResponse(http.StatusAccepted, "Operation accepted", fuego.Response{Type: dto.OperationResponse{}}),
-		option.AddResponse(http.StatusNotFound, "Volume not found", fuego.Response{Type: fuego.HTTPError{}}),
-		bearer,
-	)
 	fuego.DeleteStd(vols, "/{volume}", rs.delete,
 		option.Summary("Delete a volume"),
 		option.Description("Deletes an ore-managed Docker volume. Requires ?force=true if the volume is currently in use; that will stop the mounting containers first."),
@@ -124,25 +113,6 @@ func (rs VolumeResource) get(c fuego.ContextNoBody) (dto.VolumeResponse, error) 
 	}
 
 	return dto.NewVolumeResponse(v), nil
-}
-
-func (rs VolumeResource) measure(w http.ResponseWriter, r *http.Request) {
-	projectName := r.PathValue("name")
-	volName := r.PathValue("volume")
-
-	if err := rs.ensureVolumeInProject(r.Context(), w, projectName, volName); err != nil {
-		return
-	}
-
-	submitOperation(w, rs.PM, rs.Store, rs.Logger, rs.LogLevel, projectName, operation.ActionVolumeMeasure, volName,
-		func(ctx context.Context, logger *slog.Logger) error {
-			size, err := rs.Volumes.Measure(ctx, volName)
-			if err != nil {
-				return err
-			}
-			logger.Info("volume measured", "volume", volName, "bytes", size)
-			return nil
-		})
 }
 
 func (rs VolumeResource) delete(w http.ResponseWriter, r *http.Request) {

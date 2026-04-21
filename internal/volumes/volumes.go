@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	dockervolume "github.com/docker/docker/api/types/volume"
@@ -67,12 +67,18 @@ func (s *Service) List(ctx context.Context, networkName string) ([]Volume, error
 		usage = map[string][]string{}
 	}
 
+	sizes, err := s.sizeIndex(ctx)
+	if err != nil {
+		s.log.Warn("failed to read volume disk usage", "error", err)
+		sizes = map[string]int64{}
+	}
+
 	out := make([]Volume, 0, len(resp.Volumes))
 	for _, v := range resp.Volumes {
 		if v == nil {
 			continue
 		}
-		out = append(out, toVolume(v, usage[v.Name]))
+		out = append(out, toVolume(v, usage[v.Name], sizeOf(sizes, v.Name)))
 	}
 
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
@@ -97,7 +103,38 @@ func (s *Service) Inspect(ctx context.Context, name string) (Volume, error) {
 		s.log.Warn("failed to resolve volume users", "volume", name, "error", err)
 	}
 
-	return toVolume(&v, inUseBy), nil
+	size := SizeUnknown
+	if sizes, err := s.sizeIndex(ctx); err != nil {
+		s.log.Warn("failed to read volume disk usage", "volume", name, "error", err)
+	} else {
+		size = sizeOf(sizes, v.Name)
+	}
+
+	return toVolume(&v, inUseBy, size), nil
+}
+
+func (s *Service) sizeIndex(ctx context.Context) (map[string]int64, error) {
+	du, err := s.docker.DiskUsage(ctx, types.DiskUsageOptions{
+		Types: []types.DiskUsageObject{types.VolumeObject},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("disk usage: %w", err)
+	}
+	out := make(map[string]int64, len(du.Volumes))
+	for _, v := range du.Volumes {
+		if v == nil || v.UsageData == nil {
+			continue
+		}
+		out[v.Name] = v.UsageData.Size
+	}
+	return out, nil
+}
+
+func sizeOf(sizes map[string]int64, name string) int64 {
+	if size, ok := sizes[name]; ok {
+		return size
+	}
+	return SizeUnknown
 }
 
 func (s *Service) inUseBy(ctx context.Context, volumeName string) ([]string, error) {
@@ -153,7 +190,7 @@ func (s *Service) buildUsageIndex(ctx context.Context, networkName string) (map[
 	return usage, nil
 }
 
-func toVolume(v *dockervolume.Volume, inUseBy []string) Volume {
+func toVolume(v *dockervolume.Volume, inUseBy []string, size int64) Volume {
 	labels := v.Labels
 	if labels == nil {
 		labels = map[string]string{}
@@ -168,7 +205,7 @@ func toVolume(v *dockervolume.Volume, inUseBy []string) Volume {
 		Mountpoint: v.Mountpoint,
 		Labels:     labels,
 		CreatedAt:  parseCreatedAt(labels[deploy.LabelCreatedAt], v.CreatedAt),
-		SizeBytes:  SizeUnknown,
+		SizeBytes:  size,
 		InUseBy:    append([]string(nil), inUseBy...),
 	}
 }
@@ -268,28 +305,6 @@ func (s *Service) Remove(ctx context.Context, volumeName string, force bool) err
 	}
 	s.log.Info("volume removed", "volume", v.Name)
 	return nil
-}
-
-func (s *Service) Measure(ctx context.Context, volumeName string) (int64, error) {
-	v, err := s.Inspect(ctx, volumeName)
-	if err != nil {
-		return 0, err
-	}
-
-	res, err := docker.RunHelper(ctx, s.docker, s.log, docker.HelperSpec{
-		Cmd:   []string{"sh", "-c", "du -sb /volume | cut -f1"},
-		Binds: []string{v.Name + ":/volume:ro"},
-	})
-	if err != nil {
-		return 0, fmt.Errorf("measuring volume %s: %w", volumeName, err)
-	}
-
-	out := strings.TrimSpace(string(res.Stdout))
-	size, err := strconv.ParseInt(out, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("parsing du output %q for volume %s: %w", out, volumeName, err)
-	}
-	return size, nil
 }
 
 func containerDisplayName(name, id string) string {

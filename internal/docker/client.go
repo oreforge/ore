@@ -52,11 +52,16 @@ type VolumeClient interface {
 	VolumesPrune(ctx context.Context, pruneFilter filters.Args) (volume.PruneReport, error)
 }
 
+type SystemClient interface {
+	DiskUsage(ctx context.Context, options types.DiskUsageOptions) (types.DiskUsage, error)
+}
+
 type Client interface {
 	ImageClient
 	ContainerClient
 	NetworkClient
 	VolumeClient
+	SystemClient
 	ServerVersion(ctx context.Context) (types.Version, error)
 	Close() error
 }

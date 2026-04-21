@@ -185,9 +185,8 @@ ore clean images                    Remove Docker images built by ore
 ore clean volumes                   Remove Docker volumes (persistent server data)
 ore clean cache                     Remove cached software binaries
 ore clean builds                    Remove build artifacts
-ore volumes list                            List ore-managed Docker volumes
-ore volumes show <name>                     Show volume metadata and current usage
-ore volumes size <name>                     Measure the on-disk size of a volume
+ore volumes list                            List ore-managed Docker volumes (with size)
+ore volumes show <name>                     Show volume metadata, size, and current usage
 ore volumes remove <name> [--force]         Remove a volume (--force stops containers using it)
 ore volumes prune [--dry-run]               Remove volumes no longer declared in ore.yaml
 ore nodes list                      List configured nodes
@@ -279,15 +278,14 @@ Values support `${VAR}` environment variable expansion.
 ore tags every Docker volume it creates with a set of labels (`ore.managed`, `ore.project`, `ore.owner`, `ore.owner.kind`, `ore.volume`, `ore.created.at`). These labels make volumes discoverable and scopable per project without any external state. Volumes follow the deterministic name `{network}_{container}_{logical}`, so they survive container recreation and `ore up` reattaches the same data.
 
 ```sh
-ore volumes list                   # list volumes in the current project
-ore volumes show <name>            # show metadata and which containers use it
-ore volumes size <name>            # measure on-disk usage via a helper container
+ore volumes list                   # list volumes in the current project (includes size)
+ore volumes show <name>            # show metadata, size, and which containers use it
 ore volumes remove <name>          # remove a volume (add --force if it is in use)
 ore volumes prune                  # remove volumes no longer declared in ore.yaml
 ore volumes prune --dry-run        # preview without removing
 ```
 
-`size` runs `du -sb` on demand in a short-lived `alpine:3` helper with the volume mounted read-only; the number is always fresh, never cached. `remove --force` stops any container currently mounting the volume before removing it. `prune` compares the labeled volumes against what is declared in `ore.yaml` and removes the delta; volumes still in use are skipped and reported. Use `--dry-run` to preview the delta without removing.
+Volume sizes come straight from Docker's `/system/df` endpoint — the same source as `docker system df -v`. Sizes are reported for the `local` driver; other drivers return `-1` ("not available"). `remove --force` stops any container currently mounting the volume before removing it. `prune` compares the labeled volumes against what is declared in `ore.yaml` and removes the delta; volumes still in use are skipped and reported. Use `--dry-run` to preview the delta without removing.
 
 Volumes created before these labels existed will not appear in these views until they are recreated by `ore up`.
 

@@ -19,17 +19,16 @@ const (
 )
 
 const (
-	ActionUp            = "up"
-	ActionDown          = "down"
-	ActionBuild         = "build"
-	ActionClean         = "clean"
-	ActionUpdate        = "update"
-	ActionStart         = "start"
-	ActionStop          = "stop"
-	ActionRestart       = "restart"
-	ActionDeploy        = "deploy"
-	ActionVolumeMeasure = "volume.measure"
-	ActionVolumeRemove  = "volume.remove"
+	ActionUp           = "up"
+	ActionDown         = "down"
+	ActionBuild        = "build"
+	ActionClean        = "clean"
+	ActionUpdate       = "update"
+	ActionStart        = "start"
+	ActionStop         = "stop"
+	ActionRestart      = "restart"
+	ActionDeploy       = "deploy"
+	ActionVolumeRemove = "volume.remove"
 )
 
 type Operation struct {

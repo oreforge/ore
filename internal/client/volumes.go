@@ -37,13 +37,6 @@ func (c *Client) Volumes(ctx context.Context) ([]dto.VolumeResponse, error) {
 	return out.Volumes, nil
 }
 
-func (c *Client) VolumeMeasure(ctx context.Context, name string) error {
-	if err := c.requireProject(); err != nil {
-		return err
-	}
-	return c.streamRequest(ctx, http.MethodPost, c.projectPath()+"/volumes/"+url.PathEscape(name)+"/measure", nil)
-}
-
 func (c *Client) VolumeRemove(ctx context.Context, name string, force bool) error {
 	if err := c.requireProject(); err != nil {
 		return err
