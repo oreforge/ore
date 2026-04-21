@@ -18,6 +18,5 @@ type OredConfig struct {
 	LogLevel   string `mapstructure:"log_level"`
 	Token      string `mapstructure:"token"`
 	Projects   string `mapstructure:"projects"`
-	Backups    string `mapstructure:"backups"`
 	BindMounts bool   `mapstructure:"bind_mounts"`
 }

@@ -214,3 +214,12 @@ func (rs VolumeResource) ensureVolumeInProject(ctx context.Context, w http.Respo
 	}
 	return nil
 }
+
+func writeHTTPError(w http.ResponseWriter, err error) {
+	var he fuego.HTTPError
+	if errors.As(err, &he) {
+		errs.Write(w, he.Status, he.Detail)
+		return
+	}
+	errs.Write(w, http.StatusInternalServerError, err.Error())
+}

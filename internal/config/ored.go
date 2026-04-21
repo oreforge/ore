@@ -20,7 +20,6 @@ func LoadOred() (*OredConfig, error) {
 	v.SetDefault("log_level", "info")
 	v.SetDefault("token", "")
 	v.SetDefault("projects", OredProjectsDir())
-	v.SetDefault("backups", OredBackupsDir())
 	v.SetDefault("bind_mounts", false)
 
 	v.SetEnvPrefix("ORED")
@@ -44,9 +43,6 @@ func LoadOred() (*OredConfig, error) {
 	}
 
 	if err := os.MkdirAll(cfg.Projects, 0o755); err != nil {
-		return nil, err
-	}
-	if err := os.MkdirAll(cfg.Backups, 0o755); err != nil {
 		return nil, err
 	}
 

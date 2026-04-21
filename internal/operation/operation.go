@@ -30,10 +30,6 @@ const (
 	ActionDeploy        = "deploy"
 	ActionVolumeMeasure = "volume.measure"
 	ActionVolumeRemove  = "volume.remove"
-	ActionBackupCreate  = "backup.create"
-	ActionBackupRemove  = "backup.remove"
-	ActionBackupVerify  = "backup.verify"
-	ActionBackupRestore = "backup.restore"
 )
 
 type Operation struct {
