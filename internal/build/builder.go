@@ -170,6 +170,7 @@ func (b *Builder) Build(ctx context.Context, srv *spec.Server, repoRoot string) 
 			ImageTag:     imageTag,
 			CacheKey:     cacheKey,
 			Runtime:      srv.Software,
+			BaseImage:    artifact.Runtime.BaseImage,
 			BinaryCached: cached,
 			StartedAt:    startedAt,
 			DurationMs:   duration.Milliseconds(),

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math"
 	"strconv"
 	"strings"
@@ -13,6 +14,8 @@ import (
 
 	cerrdefs "github.com/containerd/errdefs"
 
+	"github.com/oreforge/ore/internal/build"
+	"github.com/oreforge/ore/internal/software"
 	"github.com/oreforge/ore/internal/spec"
 )
 
@@ -23,16 +26,55 @@ type NetworkStatus struct {
 }
 
 type ServerStatus struct {
-	Name      string          `json:"name" doc:"Server name from ore.yaml"`
-	Container ContainerStatus `json:"container" doc:"Runtime status"`
+	Name      string          `json:"name" doc:"Workload name from ore.yaml"`
+	Kind      WorkloadKind    `json:"kind" doc:"Workload kind: server (built from software) or service (pre-built image)"`
+	Spec      WorkloadSpec    `json:"spec" doc:"Declarative configuration from ore.yaml"`
+	Build     *BuildInfo      `json:"build,omitempty" doc:"Resolved build artifact metadata; null for services and for servers with no build on disk"`
+	Container ContainerStatus `json:"container" doc:"Live runtime state"`
+}
+
+type WorkloadKind string
+
+const (
+	KindServer  WorkloadKind = "server"
+	KindService WorkloadKind = "service"
+)
+
+type WorkloadSpec struct {
+	Source      SpecSource         `json:"source" doc:"Where the workload's image comes from"`
+	Ports       []spec.PortMapping `json:"ports,omitempty" doc:"Declared port mappings; may differ from container.ports"`
+	Memory      string             `json:"memory,omitempty" doc:"Declared memory limit (e.g. 2Gi)"`
+	CPU         string             `json:"cpu,omitempty" doc:"Declared CPU limit (e.g. 1)"`
+	Env         map[string]string  `json:"env,omitempty" doc:"Declared environment variables"`
+	Volumes     []spec.Volume      `json:"volumes,omitempty" doc:"Declared volume mounts"`
+	DependsOn   []spec.Dependency  `json:"depends_on,omitempty" doc:"Declared startup dependencies"`
+	HealthCheck *spec.HealthCheck  `json:"healthcheck,omitempty" doc:"Declared healthcheck override"`
+}
+
+type SpecSource struct {
+	Type     string    `json:"type" doc:"Source kind: software (built by ore) or image (pulled from a registry)"`
+	Software *Software `json:"software,omitempty" doc:"Populated when type == software"`
+	Image    string    `json:"image,omitempty" doc:"Populated when type == image"`
+}
+
+type Software struct {
+	Raw     string `json:"raw" doc:"Verbatim software field from ore.yaml (e.g. paper:1.20.6)"`
+	Name    string `json:"name,omitempty" doc:"Parsed software name (e.g. paper)"`
+	Version string `json:"version,omitempty" doc:"Parsed software version (e.g. 1.20.6)"`
+}
+
+type BuildInfo struct {
+	ImageTag  string    `json:"image_tag" doc:"Image tag the build pipeline produced; may differ from container.image after rollback"`
+	CacheKey  string    `json:"cache_key" doc:"Hash of software, version, and server dir contents"`
+	BaseImage string    `json:"base_image,omitempty" doc:"Base image the build was layered on (e.g. alpine:3.19)"`
+	BuiltAt   time.Time `json:"built_at,omitempty" doc:"When the build completed"`
 }
 
 type ContainerStatus struct {
-	Name         string         `json:"name" doc:"Server name"`
 	State        ContainerState `json:"state" doc:"Server state (running, exited, etc.)"`
 	Health       HealthState    `json:"health" doc:"Health check status"`
-	Image        string         `json:"image" doc:"Image tag"`
-	Ports        []PortBinding  `json:"ports,omitempty" doc:"Exposed port mappings"`
+	Image        string         `json:"image" doc:"Image currently running; may differ from build.image_tag"`
+	Ports        []PortBinding  `json:"ports,omitempty" doc:"Live host port bindings"`
 	StartedAt    time.Time      `json:"started_at,omitempty" doc:"Start time"`
 	Uptime       time.Duration  `json:"uptime,omitempty" doc:"Time since started"`
 	RestartCount int            `json:"restart_count" doc:"Number of restarts"`
@@ -176,28 +218,109 @@ func (d *Deployer) Status(ctx context.Context, s *spec.Network) (*NetworkStatus,
 		Servers: make([]ServerStatus, 0, len(s.Servers)),
 	}
 
-	for _, srv := range s.Servers {
-		ss := ServerStatus{
+	manifest := d.manifest()
+
+	for i := range s.Servers {
+		srv := &s.Servers[i]
+		status.Servers = append(status.Servers, ServerStatus{
 			Name:      srv.Name,
-			Container: d.inspectContainer(ctx, ContainerName(&srv)),
-		}
-		status.Servers = append(status.Servers, ss)
+			Kind:      KindServer,
+			Spec:      workloadSpecForServer(srv, d.logger),
+			Build:     buildInfoFor(manifest, srv.Name),
+			Container: d.inspectContainer(ctx, ContainerName(srv)),
+		})
 	}
 
-	for _, svc := range s.Services {
-		ss := ServerStatus{
+	for i := range s.Services {
+		svc := &s.Services[i]
+		status.Services = append(status.Services, ServerStatus{
 			Name:      svc.Name,
-			Container: d.inspectContainer(ctx, ServiceContainerName(&svc)),
-		}
-		status.Services = append(status.Services, ss)
+			Kind:      KindService,
+			Spec:      workloadSpecForService(svc, d.logger),
+			Container: d.inspectContainer(ctx, ServiceContainerName(svc)),
+		})
 	}
 
 	return status, nil
 }
 
+func (d *Deployer) manifest() *build.Manifest {
+	if d == nil || d.workDir == nil {
+		return nil
+	}
+	return d.workDir.Manifest()
+}
+
+func workloadSpecForServer(srv *spec.Server, logger *slog.Logger) WorkloadSpec {
+	return WorkloadSpec{
+		Source:      softwareSource(srv.Software),
+		Ports:       parsePorts(srv.Ports, srv.Name, logger),
+		Memory:      srv.Memory,
+		CPU:         srv.CPU,
+		Env:         srv.Env,
+		Volumes:     srv.Volumes,
+		DependsOn:   srv.DependsOn,
+		HealthCheck: srv.HealthCheck,
+	}
+}
+
+func workloadSpecForService(svc *spec.Service, logger *slog.Logger) WorkloadSpec {
+	return WorkloadSpec{
+		Source:      imageSource(svc.Image),
+		Ports:       parsePorts(svc.Ports, svc.Name, logger),
+		Env:         svc.Env,
+		Volumes:     svc.Volumes,
+		DependsOn:   svc.DependsOn,
+		HealthCheck: svc.HealthCheck,
+	}
+}
+
+func softwareSource(raw string) SpecSource {
+	src := SpecSource{Type: "software", Software: &Software{Raw: raw}}
+	if name, version, err := software.ParseSpec(raw); err == nil {
+		src.Software.Name = name
+		src.Software.Version = version
+	}
+	return src
+}
+
+func imageSource(image string) SpecSource {
+	return SpecSource{Type: "image", Image: image}
+}
+
+func parsePorts(ports []string, owner string, logger *slog.Logger) []spec.PortMapping {
+	if len(ports) == 0 {
+		return nil
+	}
+	out := make([]spec.PortMapping, 0, len(ports))
+	for _, p := range ports {
+		pm, err := spec.ParsePort(p)
+		if err != nil {
+			if logger != nil {
+				logger.Debug("skipping unparseable port in status response", "owner", owner, "port", p, "error", err)
+			}
+			continue
+		}
+		out = append(out, pm)
+	}
+	return out
+}
+
+func buildInfoFor(manifest *build.Manifest, serverName string) *BuildInfo {
+	entry, ok := manifest.LatestBuild(serverName)
+	if !ok {
+		return nil
+	}
+	return &BuildInfo{
+		ImageTag:  entry.ImageTag,
+		CacheKey:  entry.CacheKey,
+		BaseImage: entry.BaseImage,
+		BuiltAt:   entry.BuiltAt,
+	}
+}
+
 func (d *Deployer) inspectContainer(ctx context.Context, name string) ContainerStatus {
 	cs := ContainerStatus{
-		Name:  name,
 		State: StateNotFound,
 	}
 

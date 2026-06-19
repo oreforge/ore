@@ -56,13 +56,15 @@ func (d *Deployer) RestartService(ctx context.Context, cfg *spec.Network, servic
 }
 
 func (d *Deployer) ServiceStatus(ctx context.Context, cfg *spec.Network, serviceName string) (*ServerStatus, error) {
-	if _, err := findService(cfg, serviceName); err != nil {
+	svc, err := findService(cfg, serviceName)
+	if err != nil {
 		return nil, err
 	}
 
-	cs := d.inspectContainer(ctx, serviceName)
 	return &ServerStatus{
 		Name:      serviceName,
-		Container: cs,
+		Kind:      KindService,
+		Spec:      workloadSpecForService(svc, d.logger),
+		Container: d.inspectContainer(ctx, serviceName),
 	}, nil
 }

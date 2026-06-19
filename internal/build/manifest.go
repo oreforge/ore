@@ -25,6 +25,7 @@ type Entry struct {
 	ImageTag   string    `json:"image_tag"`
 	CacheKey   string    `json:"cache_key"`
 	SoftwareID string    `json:"software_id"`
+	BaseImage  string    `json:"base_image,omitempty"`
 	BuiltAt    time.Time `json:"built_at"`
 	DurationMs int64     `json:"duration_ms"`
 }
@@ -36,6 +37,7 @@ type Metadata struct {
 	ImageTag     string    `json:"image_tag"`
 	CacheKey     string    `json:"cache_key"`
 	Runtime      string    `json:"runtime"`
+	BaseImage    string    `json:"base_image,omitempty"`
 	BinaryCached bool      `json:"binary_cached"`
 	StartedAt    time.Time `json:"started_at"`
 	DurationMs   int64     `json:"duration_ms"`
@@ -75,4 +77,22 @@ func (m *Manifest) Save(path string) error {
 		return err
 	}
 	return os.WriteFile(path, data, 0o644)
+}
+
+func (m *Manifest) LatestBuild(serverName string) (Entry, bool) {
+	if m == nil {
+		return Entry{}, false
+	}
+	var best Entry
+	found := false
+	for _, e := range m.Builds {
+		if e.ServerName != serverName {
+			continue
+		}
+		if !found || e.BuiltAt.After(best.BuiltAt) {
+			best = e
+			found = true
+		}
+	}
+	return best, found
 }

@@ -86,7 +86,7 @@ func printTable(status *deploy.NetworkStatus) error {
 		}
 
 		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%d\n",
-			c.Name,
+			srv.Name,
 			c.State.String(),
 			c.Health.String(),
 			image,

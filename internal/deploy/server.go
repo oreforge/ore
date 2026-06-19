@@ -147,13 +147,25 @@ func (d *Deployer) RestartServer(ctx context.Context, cfg *spec.Network, serverN
 }
 
 func (d *Deployer) ServerStatus(ctx context.Context, cfg *spec.Network, serverName string) (*ServerStatus, error) {
-	if _, err := findServer(cfg, serverName); err != nil {
+	ref, err := findServer(cfg, serverName)
+	if err != nil {
 		return nil, err
 	}
 
-	cs := d.inspectContainer(ctx, serverName)
+	if ref.service != nil {
+		return &ServerStatus{
+			Name:      serverName,
+			Kind:      KindService,
+			Spec:      workloadSpecForService(ref.service, d.logger),
+			Container: d.inspectContainer(ctx, serverName),
+		}, nil
+	}
+
 	return &ServerStatus{
 		Name:      serverName,
-		Container: cs,
+		Kind:      KindServer,
+		Spec:      workloadSpecForServer(ref.server, d.logger),
+		Build:     buildInfoFor(d.manifest(), serverName),
+		Container: d.inspectContainer(ctx, serverName),
 	}, nil
 }

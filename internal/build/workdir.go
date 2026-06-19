@@ -251,6 +251,7 @@ func (w *WorkDir) WriteMetadata(serverName, cacheKey string, meta Metadata) erro
 		ImageTag:   meta.ImageTag,
 		CacheKey:   cacheKey,
 		SoftwareID: meta.SoftwareID,
+		BaseImage:  meta.BaseImage,
 		BuiltAt:    meta.StartedAt,
 		DurationMs: meta.DurationMs,
 	}
