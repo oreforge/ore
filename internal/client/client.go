@@ -211,6 +211,7 @@ func (c *Client) SetProject(p string) {
 }
 
 func (c *Client) Close() error {
+	c.client.CloseIdleConnections()
 	return nil
 }
 

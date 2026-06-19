@@ -2,11 +2,8 @@ package controllers
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
-	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/go-fuego/fuego"
@@ -15,7 +12,6 @@ import (
 	"github.com/oreforge/ore/internal/operation"
 	"github.com/oreforge/ore/internal/project"
 	"github.com/oreforge/ore/internal/server/dto"
-	"github.com/oreforge/ore/internal/server/errs"
 )
 
 type ServerResource struct {
@@ -127,13 +123,13 @@ func (rs ServerResource) MountRoutes(s *fuego.Server) {
 func (rs ServerResource) list(c fuego.ContextNoBody) (dto.ServerListResponse, error) {
 	projectName := c.PathParam("name")
 	if _, err := rs.PM.Resolve(projectName); err != nil {
-		return dto.ServerListResponse{}, fuego.HTTPError{Status: 404, Detail: "project not found"}
+		return dto.ServerListResponse{}, fuego.HTTPError{Status: http.StatusNotFound, Detail: "project not found"}
 	}
 
 	status, err := rs.PM.Status(c.Context(), projectName)
 	if err != nil {
 		rs.Logger.Error("failed to get server list", "project", projectName, "error", err)
-		return dto.ServerListResponse{}, fuego.HTTPError{Status: 500, Detail: "failed to get server status"}
+		return dto.ServerListResponse{}, fuego.HTTPError{Status: http.StatusInternalServerError, Detail: "failed to get server status"}
 	}
 
 	return dto.ServerListResponse{
@@ -147,12 +143,12 @@ func (rs ServerResource) get(c fuego.ContextNoBody) (dto.ServerStatusResponse, e
 	serverName := c.PathParam("server")
 
 	if _, err := rs.PM.Resolve(projectName); err != nil {
-		return dto.ServerStatusResponse{}, fuego.HTTPError{Status: 404, Detail: "project not found"}
+		return dto.ServerStatusResponse{}, fuego.HTTPError{Status: http.StatusNotFound, Detail: "project not found"}
 	}
 
 	status, err := rs.PM.ServerStatus(c.Context(), projectName, serverName)
 	if err != nil {
-		return dto.ServerStatusResponse{}, fuego.HTTPError{Status: 404, Detail: "server not found"}
+		return dto.ServerStatusResponse{}, fuego.HTTPError{Status: http.StatusNotFound, Detail: "server not found"}
 	}
 
 	return *status, nil
@@ -197,42 +193,9 @@ func (rs ServerResource) batchSubmit(
 	action string,
 	fn func(ctx context.Context, projectName, targetName string, logger *slog.Logger) error,
 ) {
-	projectName := r.PathValue("name")
-
-	var req dto.BatchTargetsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		errs.Write(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-	targets, err := normalizeTargets(req.Targets)
-	if err != nil {
-		errs.Write(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	if _, rerr := rs.PM.Resolve(projectName); rerr != nil {
-		errs.Write(w, http.StatusNotFound, "project not found")
-		return
-	}
-
-	if missing := rs.findMissingServers(r.Context(), projectName, targets); len(missing) > 0 {
-		errs.Write(w, http.StatusBadRequest, "unknown targets: "+strings.Join(missing, ","))
-		return
-	}
-
-	submitBatchOperation(w, r, rs.Store, rs.Logger, rs.LogLevel,
-		projectName, action, fmt.Sprintf("%d servers", len(targets)), targets,
-		func(ctx context.Context, t string, l *slog.Logger) error {
-			return fn(ctx, projectName, t, l)
-		})
-}
-
-func (rs ServerResource) findMissingServers(ctx context.Context, projectName string, targets []string) []string {
-	var missing []string
-	for _, t := range targets {
-		if _, err := rs.PM.ServerStatus(ctx, projectName, t); err != nil {
-			missing = append(missing, t)
-		}
-	}
-	return missing
+	batchSubmitTargets(w, r, rs.PM, rs.Store, rs.Logger, rs.LogLevel, action, "servers",
+		func(ctx context.Context, projectName, target string) error {
+			_, err := rs.PM.ServerStatus(ctx, projectName, target)
+			return err
+		}, fn)
 }

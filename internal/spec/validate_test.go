@@ -256,6 +256,53 @@ func TestValidate(t *testing.T) {
 			},
 			wantErr: "healthcheck.timeout must be positive",
 		},
+		{
+			name: "healthcheck_retries_over_max",
+			network: Network{
+				Network: "test",
+				Servers: []Server{{
+					Name: "lobby", Dir: "./lobby", Software: "paper:1.21",
+					HealthCheck: &HealthCheck{Retries: maxHealthCheckRetries + 1},
+				}},
+			},
+			wantErr: "healthcheck.retries must be <=",
+		},
+		{
+			name: "invalid_network_name",
+			network: Network{
+				Network: "bad network",
+				Servers: []Server{minimalServer},
+			},
+			wantErr: "network name",
+		},
+		{
+			name: "invalid_server_name",
+			network: Network{
+				Network: "test",
+				Servers: []Server{{Name: "bad name", Dir: "./lobby", Software: "paper:1.21"}},
+			},
+			wantErr: "servers[0] name",
+		},
+		{
+			name: "invalid_service_name",
+			network: Network{
+				Network:  "test",
+				Servers:  []Server{minimalServer},
+				Services: []Service{{Name: "@db", Image: "postgres:16"}},
+			},
+			wantErr: "services[0] name",
+		},
+		{
+			name: "invalid_server_volume_name",
+			network: Network{
+				Network: "test",
+				Servers: []Server{{
+					Name: "lobby", Dir: "./lobby", Software: "paper:1.21",
+					Volumes: []Volume{{Name: "bad name", Target: "/data"}},
+				}},
+			},
+			wantErr: "volumes[0] name",
+		},
 	}
 
 	for _, tt := range tests {
@@ -382,6 +429,39 @@ func TestValidateImageFormat(t *testing.T) {
 			if tt.wantErr != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestValidateName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{name: "simple", input: "lobby"},
+		{name: "with_digits", input: "lobby1"},
+		{name: "with_separators", input: "my_server.1-a"},
+		{name: "leading_digit", input: "1lobby"},
+		{name: "empty", input: "", wantErr: true},
+		{name: "space", input: "my server", wantErr: true},
+		{name: "leading_dash", input: "-lobby", wantErr: true},
+		{name: "leading_dot", input: ".lobby", wantErr: true},
+		{name: "at_sign", input: "@data", wantErr: true},
+		{name: "slash", input: "a/b", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := validateName(tt.input)
+			if tt.wantErr {
+				require.Error(t, err)
 				return
 			}
 			require.NoError(t, err)

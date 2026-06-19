@@ -157,11 +157,6 @@ type stringBuilderWriter struct{ b *strings.Builder }
 
 func (w *stringBuilderWriter) Write(p []byte) (int, error) { return w.b.Write(p) }
 
-type HelperStream struct {
-	Stdout io.ReadCloser
-	Wait   func() (int64, string, error)
-}
-
 func RunHelperWithStdin(ctx context.Context, d Client, logger *slog.Logger, spec HelperSpec, stdin io.Reader) error {
 	img := spec.Image
 	if img == "" {
@@ -203,7 +198,9 @@ func RunHelperWithStdin(ctx context.Context, d Client, logger *slog.Logger, spec
 	if err != nil {
 		return fmt.Errorf("attaching helper: %w", err)
 	}
-	defer attach.Close()
+	var closeAttach sync.Once
+	closeAttachConn := func() { closeAttach.Do(attach.Close) }
+	defer closeAttachConn()
 
 	if err := d.ContainerStart(ctx, id, container.StartOptions{}); err != nil {
 		return fmt.Errorf("starting helper: %w", err)
@@ -236,7 +233,7 @@ func RunHelperWithStdin(ctx context.Context, d Client, logger *slog.Logger, spec
 	select {
 	case <-ctx.Done():
 		cancelCopy()
-		attach.Close()
+		closeAttachConn()
 		<-copyDone
 		<-stderrDone
 		return ctx.Err()
@@ -251,7 +248,7 @@ func RunHelperWithStdin(ctx context.Context, d Client, logger *slog.Logger, spec
 		select {
 		case <-ctx.Done():
 			cancelCopy()
-			attach.Close()
+			closeAttachConn()
 			<-stderrDone
 			return ctx.Err()
 		case err := <-errCh:
@@ -261,7 +258,7 @@ func RunHelperWithStdin(ctx context.Context, d Client, logger *slog.Logger, spec
 		}
 	}
 
-	attach.Close()
+	closeAttachConn()
 	<-stderrDone
 
 	if waitErr != nil {
@@ -305,85 +302,4 @@ func (l *lockedWriter) Write(p []byte) (int, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.w.Write(p)
-}
-
-func StartHelperStream(ctx context.Context, d Client, logger *slog.Logger, spec HelperSpec) (*HelperStream, error) {
-	img := spec.Image
-	if img == "" {
-		img = HelperImage
-	}
-	if err := ensureImage(ctx, d, img, logger); err != nil {
-		return nil, err
-	}
-
-	cfg := &container.Config{
-		Image:      img,
-		Cmd:        spec.Cmd,
-		Env:        spec.Env,
-		WorkingDir: spec.WorkDir,
-		Tty:        false,
-		Labels:     map[string]string{"ore.helper": "true"},
-	}
-	hostCfg := &container.HostConfig{Binds: spec.Binds}
-
-	created, err := d.ContainerCreate(ctx, cfg, hostCfg, nil, nil, spec.Name)
-	if err != nil {
-		return nil, fmt.Errorf("creating helper container: %w", err)
-	}
-	id := created.ID
-
-	removeContainer := func() {
-		if rmErr := d.ContainerRemove(context.Background(), id, container.RemoveOptions{Force: true}); rmErr != nil && !cerrdefs.IsNotFound(rmErr) {
-			logger.Warn("failed to remove helper container", "id", id, "error", rmErr)
-		}
-	}
-
-	if err := d.ContainerStart(ctx, id, container.StartOptions{}); err != nil {
-		removeContainer()
-		return nil, fmt.Errorf("starting helper container: %w", err)
-	}
-
-	logs, err := d.ContainerLogs(ctx, id, container.LogsOptions{
-		ShowStdout: true,
-		ShowStderr: true,
-		Follow:     true,
-	})
-	if err != nil {
-		removeContainer()
-		return nil, fmt.Errorf("attaching helper logs: %w", err)
-	}
-
-	stdoutR, stdoutW := io.Pipe()
-	stderrBuf := &strings.Builder{}
-
-	go func() {
-		_, copyErr := stdcopy.StdCopy(stdoutW, &stringBuilderWriter{stderrBuf}, logs)
-		_ = logs.Close()
-		_ = stdoutW.CloseWithError(copyErr)
-	}()
-
-	statusCh, errCh := d.ContainerWait(ctx, id, container.WaitConditionNotRunning)
-
-	wait := func() (int64, string, error) {
-		defer removeContainer()
-		select {
-		case <-ctx.Done():
-			return 0, stderrBuf.String(), ctx.Err()
-		case err := <-errCh:
-			if err != nil {
-				return 0, stderrBuf.String(), fmt.Errorf("waiting for helper container: %w", err)
-			}
-			return 0, stderrBuf.String(), nil
-		case st := <-statusCh:
-			if st.Error != nil && st.Error.Message != "" {
-				return st.StatusCode, stderrBuf.String(), errors.New(st.Error.Message)
-			}
-			if st.StatusCode != 0 {
-				return st.StatusCode, stderrBuf.String(), fmt.Errorf("helper exited with code %d: %s", st.StatusCode, strings.TrimSpace(stderrBuf.String()))
-			}
-			return 0, stderrBuf.String(), nil
-		}
-	}
-
-	return &HelperStream{Stdout: stdoutR, Wait: wait}, nil
 }

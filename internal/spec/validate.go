@@ -3,13 +3,21 @@ package spec
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
 
+var namePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]*$`)
+
+const maxHealthCheckRetries = 1000
+
 func Validate(s *Network) error {
 	if s.Network == "" {
 		return fmt.Errorf("validation: network name is required")
+	}
+	if err := validateName(s.Network); err != nil {
+		return fmt.Errorf("validation: network name %w", err)
 	}
 
 	if s.Icon != "" {
@@ -31,6 +39,10 @@ func Validate(s *Network) error {
 			return fmt.Errorf("validation: duplicate name %q", srv.Name)
 		}
 		names[srv.Name] = true
+
+		if err := validateName(srv.Name); err != nil {
+			return fmt.Errorf("validation: servers[%d] name %w", i, err)
+		}
 
 		if srv.Dir == "" {
 			return fmt.Errorf("validation: servers[%d] (%s): dir is required", i, srv.Name)
@@ -54,6 +66,9 @@ func Validate(s *Network) error {
 			if vol.Name == "" {
 				return fmt.Errorf("validation: servers[%d] (%s): volumes[%d].name is required", i, srv.Name, j)
 			}
+			if err := validateName(vol.Name); err != nil {
+				return fmt.Errorf("validation: servers[%d] (%s): volumes[%d] name %w", i, srv.Name, j, err)
+			}
 			if vol.Target == "" {
 				return fmt.Errorf("validation: servers[%d] (%s): volumes[%d].target is required", i, srv.Name, j)
 			}
@@ -73,6 +88,10 @@ func Validate(s *Network) error {
 		}
 		names[svc.Name] = true
 
+		if err := validateName(svc.Name); err != nil {
+			return fmt.Errorf("validation: services[%d] name %w", i, err)
+		}
+
 		if svc.Image == "" {
 			return fmt.Errorf("validation: services[%d] (%s): image is required", i, svc.Name)
 		}
@@ -90,6 +109,9 @@ func Validate(s *Network) error {
 		for j, vol := range svc.Volumes {
 			if vol.Name == "" {
 				return fmt.Errorf("validation: services[%d] (%s): volumes[%d].name is required", i, svc.Name, j)
+			}
+			if err := validateName(vol.Name); err != nil {
+				return fmt.Errorf("validation: services[%d] (%s): volumes[%d] name %w", i, svc.Name, j, err)
 			}
 			if vol.Target == "" {
 				return fmt.Errorf("validation: services[%d] (%s): volumes[%d].target is required", i, svc.Name, j)
@@ -129,6 +151,16 @@ func validateHealthCheck(hc *HealthCheck, context string) error {
 	}
 	if hc.Retries < 0 {
 		return fmt.Errorf("validation: %s: healthcheck.retries must be positive", context)
+	}
+	if hc.Retries > maxHealthCheckRetries {
+		return fmt.Errorf("validation: %s: healthcheck.retries must be <= %d", context, maxHealthCheckRetries)
+	}
+	return nil
+}
+
+func validateName(name string) error {
+	if !namePattern.MatchString(name) {
+		return fmt.Errorf("%q is invalid: must match %s", name, namePattern.String())
 	}
 	return nil
 }

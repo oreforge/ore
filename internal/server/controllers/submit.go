@@ -86,6 +86,53 @@ func normalizeTargets(in []string) ([]string, error) {
 	return out, nil
 }
 
+func batchSubmitTargets(
+	w http.ResponseWriter,
+	r *http.Request,
+	pm *project.Manager,
+	store *operation.Store,
+	logger *slog.Logger,
+	logLevel slog.Level,
+	action, noun string,
+	lookup func(ctx context.Context, projectName, target string) error,
+	perTarget func(ctx context.Context, projectName, target string, logger *slog.Logger) error,
+) {
+	projectName := r.PathValue("name")
+
+	var req dto.BatchTargetsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		errs.Write(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	targets, err := normalizeTargets(req.Targets)
+	if err != nil {
+		errs.Write(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if _, rerr := pm.Resolve(projectName); rerr != nil {
+		errs.Write(w, http.StatusNotFound, "project not found")
+		return
+	}
+
+	var missing []string
+	for _, t := range targets {
+		if lookupErr := lookup(r.Context(), projectName, t); lookupErr != nil {
+			missing = append(missing, t)
+		}
+	}
+	if len(missing) > 0 {
+		errs.Write(w, http.StatusBadRequest, "unknown targets: "+strings.Join(missing, ","))
+		return
+	}
+
+	submitBatchOperation(w, r, store, logger, logLevel,
+		projectName, action, fmt.Sprintf("%d %s", len(targets), noun), targets,
+		func(ctx context.Context, t string, l *slog.Logger) error {
+			return perTarget(ctx, projectName, t, l)
+		})
+}
+
 func runBatch(
 	ctx context.Context,
 	logger *slog.Logger,

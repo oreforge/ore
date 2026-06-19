@@ -96,6 +96,8 @@ func (d *Deployer) Up(ctx context.Context, cfg *spec.Network, images map[string]
 		for _, svcName := range group.Services {
 			svc := serviceByName[svcName]
 			g.Go(func() error {
+				defer close(ready[svc.Name])
+
 				if err := waitForDeps(gCtx, svc.DependsOn, ready); err != nil {
 					return fmt.Errorf("service %s: dependency wait: %w", svc.Name, err)
 				}
@@ -109,7 +111,6 @@ func (d *Deployer) Up(ctx context.Context, cfg *spec.Network, images map[string]
 					mu.Lock()
 					newState.Services[svc.Name] = ServiceState{Image: svc.Image, ConfigHash: configHash}
 					mu.Unlock()
-					close(ready[svc.Name])
 					return nil
 				}
 
@@ -140,7 +141,6 @@ func (d *Deployer) Up(ctx context.Context, cfg *spec.Network, images map[string]
 				mu.Lock()
 				newState.Services[svc.Name] = ServiceState{Image: svc.Image, ConfigHash: configHash}
 				mu.Unlock()
-				close(ready[svc.Name])
 				return nil
 			})
 		}
@@ -148,6 +148,8 @@ func (d *Deployer) Up(ctx context.Context, cfg *spec.Network, images map[string]
 		for _, srvName := range group.Servers {
 			srv := serverByName[srvName]
 			g.Go(func() error {
+				defer close(ready[srv.Name])
+
 				if err := waitForDeps(gCtx, srv.DependsOn, ready); err != nil {
 					return fmt.Errorf("server %s: dependency wait: %w", srv.Name, err)
 				}
@@ -175,7 +177,6 @@ func (d *Deployer) Up(ctx context.Context, cfg *spec.Network, images map[string]
 					mu.Lock()
 					newState.Servers[srv.Name] = ServerState{ImageTag: tag, ConfigHash: configHash}
 					mu.Unlock()
-					close(ready[srv.Name])
 					return nil
 				}
 
@@ -205,7 +206,6 @@ func (d *Deployer) Up(ctx context.Context, cfg *spec.Network, images map[string]
 				mu.Lock()
 				newState.Servers[srv.Name] = ServerState{ImageTag: tag, ConfigHash: configHash}
 				mu.Unlock()
-				close(ready[srv.Name])
 				return nil
 			})
 		}
