@@ -195,8 +195,6 @@ homebrew_casks:
     description: "Infrastructure-as-Code CLI for game server networks"
     license: "MIT"
     directory: Casks
-    url:
-      verified: github.com/oreforge/ore
     binaries:
       - ore
     hooks:
@@ -222,8 +220,6 @@ homebrew_casks:
     description: "Infrastructure-as-Code CLI for game server networks (v{{ .Major }}.{{ .Minor }}.x)"
     license: "MIT"
     directory: Casks
-    url:
-      verified: github.com/oreforge/ore
     binaries:
       - ore
     hooks:
